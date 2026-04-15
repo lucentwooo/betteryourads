@@ -224,7 +224,7 @@ export default function AnalyzePage() {
           </Section>
         )}
 
-        {(job.diagnosis || job.diagnosis?.recommendedConcepts) && (
+        {job.diagnosis && (
           <Section num="04" label="Diagnosis & the plan" id="diagnosis">
             {job.diagnosis && <DiagnosisSection diagnosis={job.diagnosis} />}
             {job.diagnosis?.recommendedConcepts && (
