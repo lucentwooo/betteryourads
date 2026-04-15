@@ -1,0 +1,88 @@
+{
+  "slug": "edatlas",
+  "displayName": "EdAtlas",
+  "website": "https://edatlas.com.au",
+  "category": "Education / Tutoring — Elite VCE",
+  "audienceRegister": "youth-student-ugc",
+  "brandProfile": {
+    "colors": {
+      "primary": "#7fe3ff",
+      "secondary": "#000000",
+      "accent": "#7fe3ff",
+      "background": "#ffffff",
+      "text": "#333333",
+      "navy": "#04133a"
+    },
+    "typography": {
+      "primary": "Lora",
+      "secondary": "Montserrat",
+      "headingWeight": 300,
+      "bodyWeight": 400
+    },
+    "visualStyle": {
+      "mode": "light",
+      "ctaShape": "pill",
+      "corners": "rounded",
+      "aesthetic": "light-mode, modern, minimal"
+    },
+    "tone": "Confident, authoritative, results-driven, aspirational, bold with specific numbers",
+    "logoUrl": "https://edatlas.com.au/wp-content/uploads/2023/08/EdAtlas-Logo.png",
+    "dosAndDonts": {
+      "do": [
+        "Lead with specific numeric results (Raw 50, 99.95 ATAR, 45+ guarantee)",
+        "Feature real student credentials (Dux of MacRob, Melbourne High, etc.)",
+        "Use bright cyan (#7FE3FF) as the single accent color",
+        "Keep headlines to 3-5 words, confrontational or aspirational"
+      ],
+      "dont": [
+        "Use cinematic magazine editorial aesthetic (wrong register for teen audience)",
+        "Generate AI faces of 'students' (always uncanny)",
+        "Bake fake ATAR numbers or fake letter documents into AI props",
+        "Overcrowd with multiple competing messages"
+      ]
+    }
+  },
+  "proofPoints": {
+    "raw_50s_2025": 16,
+    "top_01_percent": 17,
+    "atar_9995_count": 7,
+    "methods_raw_50_market_share": "~30% of all statewide",
+    "monash_medicine_admits": "70+",
+    "guarantee": "45+ Raw or full refund (Group Methods/Specialist)",
+    "exam_prediction_accuracy_2024": "99% of Methods, 98% of Specialist"
+  },
+  "locked": {
+    "visualSystem": {
+      "approach": "AI-generated lo-fi iPhone UGC photo background + HTML/Puppeteer composited typography. Never let AI render typography.",
+      "backgroundAesthetic": "Lo-fi iPhone UGC, natural daylight (NOT cinematic, NOT golden hour). Authentic student-scroll feed aesthetic.",
+      "backgroundSubjects": [
+        "Real student desk POV — open workbook with handwritten notes, highlighter, water bottle, pencil case",
+        "Dream outcome — graduation caps mid-air against bright sky, hands reaching up, NO visible faces, NO uni logos/crests",
+        "Acceptance / celebration moment — hands holding phone showing reactions (screen content composited separately)"
+      ],
+      "format": "1080x1080 square (1:1) default; 1080x1350 for portrait variants",
+      "typographyFont": "Inter",
+      "headlineWeight": 900,
+      "headlineSizePx": 128,
+      "headlineLineHeight": 0.96,
+      "headlineLetterSpacing": "-0.04em",
+      "headlineColor": "#FFFFFF",
+      "headlineAccentColor": "#7FE3FF",
+      "accentWordPattern": "Apply cyan accent to the final 1-2 words of the headline (e.g., 'Monash Medicine starts here.' → cyan on 'here.')",
+      "overlayGradient": {
+        "top": "linear-gradient(180deg, rgba(8,12,22,0.95) 0%, rgba(8,12,22,0.88) 28%, rgba(8,12,22,0.55) 48%, rgba(0,0,0,0) 62%)",
+        "bottom": "linear-gradient(0deg, rgba(8,12,22,0.82) 0%, rgba(8,12,22,0.55) 10%, rgba(0,0,0,0) 25%)",
+        "_note": "Top overlay must be 0.95+ on bright daylight UGC backgrounds to keep white headline readable."
+      },
+      "wordmarkStyle": "Top-left, 54px top / 64px left. 'EdAtlas' in Inter 800, 22px, letter-spacing 0.22em, uppercase, 92% white. Followed by an 8px cyan (#7FE3FF) dot with a cyan glow shadow.",
+      "ctaStyle": "Bottom-centered pill. Background #7FE3FF, text #04133A Inter 800 at 32px. Padding 26px 64px. border-radius 999px. box-shadow: 0 10px 40px rgba(127,227,255,0.35), 0 4px 14px rgba(0,0,0,0.4). Brightest element on canvas.",
+      "subproofStyle": "Below CTA, 20px gap. rgba(255,255,255,0.72), 18px Inter 500, letter-spacing 0.02em. One line max.",
+      "pipelineReference": "/Users/lucentwu/Documents/Projects/Jarvis/output/edatlas-creatives-2026-04-12/composite.ts — the validated compositor lives here. Bg prompts in prompts/06-guarantee-lofi-bg.json and prompts/07-dream-grad-bg.json."
+    },
+    "_note": "Locked by ad-creative-generator after validated runs on 2026-04-12/13. Re-analysis via BetterYourAds will not overwrite these fields. Only an explicit relock action replaces this block."
+  },
+  "jobHistory": [
+    { "jobId": "a4e9ba2d", "completedAt": "2026-04-12T12:09:04.821Z" }
+  ],
+  "updatedAt": "2026-04-13T00:00:00.000Z"
+}

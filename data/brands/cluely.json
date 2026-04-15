@@ -1,0 +1,50 @@
+{
+  "slug": "cluely",
+  "displayName": "Cluely",
+  "website": "https://cluely.com",
+  "audienceRegister": "unassigned",
+  "brandProfile": {
+    "colors": {
+      "primary": "#4a90e2",
+      "secondary": "#ffffff",
+      "accent": "#ff6b6b",
+      "background": "#87ceeb",
+      "text": "#ffffff"
+    },
+    "typography": {
+      "primary": "EB Garamond",
+      "secondary": "Geist",
+      "headingWeight": 500,
+      "bodyWeight": 400
+    },
+    "visualStyle": {
+      "mode": "light",
+      "ctaShape": "unknown",
+      "corners": "rounded",
+      "aesthetic": "light-mode, modern"
+    },
+    "tone": "to-be-determined",
+    "logoUrl": "https://cluely.com/wordmark-light.svg",
+    "dosAndDonts": {
+      "do": [
+        "Use the primary blue (#4a90e2) as the dominant color with white text for maximum impact and brand recognition",
+        "Emphasize the 'undetectable' and 'real-time assistance' value propositions prominently in headlines using EB Garamond font",
+        "Include clean mockups of the Mac interface with rounded corners to showcase the product in action during meetings",
+        "Use professional, confident tone focusing on instant AI assistance and seamless meeting enhancement"
+      ],
+      "dont": [
+        "Avoid dark backgrounds or dark mode visuals - stick to the light aesthetic with sky blue (#87ceeb) backgrounds",
+        "Don't use generic stock photos of meetings - focus on actual product interface and real-time assistance features",
+        "Avoid overly technical jargon - keep copy accessible while maintaining the smart, professional positioning",
+        "Don't use sharp corners or harsh design elements - maintain the rounded, modern visual style throughout"
+      ]
+    }
+  },
+  "jobHistory": [
+    {
+      "jobId": "68e5076a",
+      "completedAt": "2026-04-15T02:32:30.014Z"
+    }
+  ],
+  "updatedAt": "2026-04-15T02:32:30.014Z"
+}

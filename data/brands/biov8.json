@@ -1,0 +1,49 @@
+{
+  "slug": "biov8",
+  "displayName": "BIOV8",
+  "website": "https://biov8.com.au",
+  "audienceRegister": "unassigned",
+  "brandProfile": {
+    "colors": {
+      "primary": "#000000",
+      "secondary": "#000000",
+      "accent": "#000000",
+      "background": "#ebeae5",
+      "text": "#000000"
+    },
+    "typography": {
+      "primary": "Roboto",
+      "headingWeight": 400,
+      "bodyWeight": 500
+    },
+    "visualStyle": {
+      "mode": "light",
+      "ctaShape": "sharp button",
+      "corners": "sharp",
+      "aesthetic": "light-mode, modern, minimal"
+    },
+    "tone": "to-be-determined",
+    "logoUrl": "https://biov8.com.au/cdn/shop/files/Logo_994d7bdf-a00c-403c-94d5-8de2e9c22050.png?v=1730753083&width=360",
+    "dosAndDonts": {
+      "do": [
+        "Use clean white backgrounds with the signature #ebeae5 beige as accent areas to maintain the light, minimal aesthetic",
+        "Employ sharp-edged geometric layouts with plenty of white space and clean lines to reflect the modern, clinical approach",
+        "Feature bold black text with Roboto font in a science-forward tone that emphasizes personalization, backed by medical expertise",
+        "Include sharp-cornered CTA buttons in black with clear action-oriented text like 'Start Your Health Journey' or 'Get Personalized Care'"
+      ],
+      "dont": [
+        "Use rounded corners, gradients, or soft shadows that contradict the sharp, clinical brand aesthetic",
+        "Incorporate bright colors, complex patterns, or busy backgrounds that detract from the minimal, medical-grade appearance",
+        "Write in casual, overly friendly language - avoid abandoning the professional, science-based tone for trendy social media speak",
+        "Create cluttered layouts with multiple competing elements - maintain the clean, focused approach that emphasizes one clear health benefit per creative"
+      ]
+    }
+  },
+  "jobHistory": [
+    {
+      "jobId": "95296cb7",
+      "completedAt": "2026-04-13T04:36:30.265Z"
+    }
+  ],
+  "updatedAt": "2026-04-13T04:36:30.268Z"
+}

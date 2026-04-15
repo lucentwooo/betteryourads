@@ -1,0 +1,49 @@
+{
+  "slug": "skillest",
+  "displayName": "Skillest",
+  "website": "https://skillest.com",
+  "audienceRegister": "unassigned",
+  "brandProfile": {
+    "colors": {
+      "primary": "#000000",
+      "secondary": "#000000",
+      "accent": "#060608",
+      "background": "#000000",
+      "text": "#000000"
+    },
+    "typography": {
+      "primary": "Satoshi",
+      "headingWeight": 500,
+      "bodyWeight": 700
+    },
+    "visualStyle": {
+      "mode": "dark",
+      "ctaShape": "rounded button",
+      "corners": "rounded",
+      "aesthetic": "dark-mode, modern"
+    },
+    "tone": "to-be-determined",
+    "logoUrl": "https://skillest.com/_next/image?url=%2Fhomepage%2Fimages%2Fskillest-logo.svg&w=256&q=75",
+    "dosAndDonts": {
+      "do": [
+        "Use dark backgrounds (#000000) with white or light text for high contrast readability",
+        "Feature the Satoshi font family for all text elements to maintain brand consistency",
+        "Use rounded corners on all buttons, cards, and interface elements to match the brand's corner style",
+        "Write copy that addresses golf frustrations directly and positions coaching as the solution, using conversational tone like 'You've tried everything' or 'There's a better way'"
+      ],
+      "dont": [
+        "Use bright, colorful backgrounds or light mode aesthetics that contradict the dark visual mode",
+        "Create generic golf lesson ads - avoid positioning as traditional lessons since the brand specifically says 'You don't need another golf lesson'",
+        "Use sharp, square corners on buttons or design elements that go against the rounded corner style",
+        "Write overly formal or corporate copy - avoid being salesy and instead focus on understanding the golfer's pain points and frustrations"
+      ]
+    }
+  },
+  "jobHistory": [
+    {
+      "jobId": "b62dcda6",
+      "completedAt": "2026-04-13T04:55:06.403Z"
+    }
+  ],
+  "updatedAt": "2026-04-13T04:55:06.405Z"
+}
