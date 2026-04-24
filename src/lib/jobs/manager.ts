@@ -2,12 +2,14 @@ import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
 import path from "path";
 import type { Job, AnalysisInput, JobStatus, ProgressStep } from "../types";
+import { kvGet, kvSet } from "../storage/kv";
+import { STORAGE_ROOT } from "../storage-root";
 
-const DATA_DIR = path.join(process.cwd(), "data", "jobs");
+// Ephemeral in-process cache to avoid hammering KV within a single request.
 const jobs = new Map<string, Job>();
 
-async function ensureDir(dir: string) {
-  await fs.mkdir(dir, { recursive: true });
+function jobKey(id: string): string {
+  return `job:${id}`;
 }
 
 export async function createJob(input: AnalysisInput): Promise<Job> {
@@ -22,28 +24,21 @@ export async function createJob(input: AnalysisInput): Promise<Job> {
 
   jobs.set(id, job);
 
-  const jobDir = path.join(DATA_DIR, id);
-  await ensureDir(jobDir);
-  await ensureDir(path.join(jobDir, "ads"));
-  await persistJob(job);
+  // Scratch dirs for pipeline tools that need a filesystem (Playwright,
+  // sharp, python image scripts). Artifacts users will see are uploaded to
+  // Blob; this stays ephemeral.
+  const jobDir = getJobDir(id);
+  await fs.mkdir(path.join(jobDir, "ads"), { recursive: true });
 
+  await persistJob(job);
   return job;
 }
 
 export async function getJob(id: string): Promise<Job | null> {
-  if (jobs.has(id)) {
-    return jobs.get(id)!;
-  }
-
-  try {
-    const filePath = path.join(DATA_DIR, id, "job.json");
-    const data = await fs.readFile(filePath, "utf-8");
-    const job = JSON.parse(data) as Job;
-    jobs.set(id, job);
-    return job;
-  } catch {
-    return null;
-  }
+  if (jobs.has(id)) return jobs.get(id)!;
+  const job = await kvGet<Job>(jobKey(id));
+  if (job) jobs.set(id, job);
+  return job;
 }
 
 export async function updateJob(
@@ -96,14 +91,9 @@ export async function setStatus(
 }
 
 export function getJobDir(id: string): string {
-  return path.join(DATA_DIR, id);
+  return path.join(STORAGE_ROOT, "jobs", id);
 }
 
 async function persistJob(job: Job): Promise<void> {
-  const jobDir = path.join(DATA_DIR, job.id);
-  await ensureDir(jobDir);
-  await fs.writeFile(
-    path.join(jobDir, "job.json"),
-    JSON.stringify(job, null, 2)
-  );
+  await kvSet(jobKey(job.id), job);
 }

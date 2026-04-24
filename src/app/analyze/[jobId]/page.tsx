@@ -131,8 +131,11 @@ export default function AnalyzePage() {
     );
   }
 
+  // Blob URLs come back as full https; legacy local paths contain "data/jobs/".
   const websiteScreenshotUrl = job.websiteScreenshot
-    ? `/api/screenshots/${job.websiteScreenshot.split("data/jobs/").pop()}`
+    ? job.websiteScreenshot.includes("data/jobs/")
+      ? `/api/screenshots/${job.websiteScreenshot.split("data/jobs/").pop()}`
+      : job.websiteScreenshot
     : undefined;
 
   const company = job.input?.companyName || "this company";

@@ -1,8 +1,11 @@
 import puppeteer from "puppeteer";
 import path from "path";
+import fs from "fs/promises";
+import { putImage } from "../storage/image-store";
 
 export interface WebsiteScrapResult {
-  screenshotPath: string;
+  screenshotPath: string; // URL (Blob https URL in prod, /api/screenshots/... in dev)
+  localScreenshotPath: string; // absolute filesystem path for in-pipeline tools (sharp, etc.)
   textContent: string;
   title: string;
   description: string;
@@ -83,12 +86,20 @@ export async function scrapeWebsite(
     });
     await new Promise((r) => setTimeout(r, 1000));
 
-    // Take full-page screenshot
-    const screenshotPath = path.join(outputDir, "website-screenshot.png");
-    await page.screenshot({
-      path: screenshotPath,
-      fullPage: true,
-    });
+    // Take full-page screenshot — capture as buffer so we can upload to Blob
+    // AND keep a local copy for in-pipeline tools that need filesystem access.
+    const buffer = Buffer.from(await page.screenshot({ fullPage: true, type: "png" }));
+    const localScreenshotPath = path.join(outputDir, "website-screenshot.png");
+    await fs.mkdir(outputDir, { recursive: true });
+    await fs.writeFile(localScreenshotPath, buffer);
+
+    // Key includes job-id-like folder so Blob keys stay collision-free.
+    const blobKey = path.posix.join(
+      "jobs",
+      ...outputDir.replace(/\\/g, "/").split("/").slice(-1),
+      "website-screenshot.png"
+    );
+    const screenshotUrl = await putImage(blobKey, buffer, "image/png");
 
     // Extract page data
     const pageData = await page.evaluate(() => {
@@ -123,7 +134,8 @@ export async function scrapeWebsite(
     });
 
     return {
-      screenshotPath,
+      screenshotPath: screenshotUrl,
+      localScreenshotPath,
       ...pageData,
     };
   } finally {

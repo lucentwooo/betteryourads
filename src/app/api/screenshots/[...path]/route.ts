@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
+import { STORAGE_ROOT } from "@/lib/storage-root";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path: pathSegments } = await params;
-  const filePath = path.join(process.cwd(), "data", "jobs", ...pathSegments);
+  const filePath = path.join(STORAGE_ROOT, "jobs", ...pathSegments);
 
   try {
     const file = await fs.readFile(filePath);

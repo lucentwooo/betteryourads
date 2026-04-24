@@ -3,6 +3,8 @@ import path from "path";
 import type { Creative, BrandProfile } from "../types";
 import { client, MODEL, runWithQA, judgeWithRubric } from "./shared";
 import { KieClient } from "../imagegen/kie-client";
+import { putImage } from "../storage/image-store";
+import { STORAGE_ROOT } from "../storage-root";
 
 /**
  * Agent 6 — Art Director / Account Manager — image generator + multimodal QA.
@@ -61,8 +63,20 @@ export async function runImageGenerator(
     await onAgentProgress?.(`Image escalated for ${params.creative.id}: ${qa.issues.slice(0, 2).join("; ")}`);
   }
 
-  const relativePath = path.relative(path.join(process.cwd(), "data"), output.localPath);
-  return { imageUrl: output.imageUrl, localPath: output.localPath, relativePath, qa };
+  // Upload the final PNG to Blob so the URL persists across cold starts.
+  // The returned imageUrl is what the frontend renders; localPath stays
+  // for any in-pipeline tooling that still needs filesystem access.
+  const pngBuffer = await fs.readFile(output.localPath);
+  const blobKey = path.posix.join(
+    "jobs",
+    path.basename(path.dirname(path.dirname(output.localPath))),
+    "creatives",
+    path.basename(output.localPath)
+  );
+  const persistedUrl = await putImage(blobKey, pngBuffer, "image/png");
+
+  const relativePath = path.relative(STORAGE_ROOT, output.localPath);
+  return { imageUrl: persistedUrl, localPath: output.localPath, relativePath, qa };
 }
 
 function buildKiePromptString(creative: Creative, feedback?: string): string {

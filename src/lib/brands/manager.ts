@@ -1,26 +1,14 @@
-import fs from "fs/promises";
-import path from "path";
 import type { Job } from "../types";
 import type { BrandRecord, LockedVisualSystem } from "./types";
 import { toSlug } from "./slug";
+import { kvGet, kvSet } from "../storage/kv";
 
-const BRANDS_DIR = path.join(process.cwd(), "data", "brands");
-
-async function ensureDir(dir: string) {
-  await fs.mkdir(dir, { recursive: true });
-}
-
-function brandPath(slug: string): string {
-  return path.join(BRANDS_DIR, `${slug}.json`);
+function brandKey(slug: string): string {
+  return `brand:${slug}`;
 }
 
 export async function getBrand(slug: string): Promise<BrandRecord | null> {
-  try {
-    const data = await fs.readFile(brandPath(slug), "utf-8");
-    return JSON.parse(data) as BrandRecord;
-  } catch {
-    return null;
-  }
+  return kvGet<BrandRecord>(brandKey(slug));
 }
 
 export async function upsertBrandFromJob(job: Job): Promise<BrandRecord> {
@@ -45,8 +33,7 @@ export async function upsertBrandFromJob(job: Job): Promise<BrandRecord> {
     updatedAt: now,
   };
 
-  await ensureDir(BRANDS_DIR);
-  await fs.writeFile(brandPath(slug), JSON.stringify(merged, null, 2));
+  await kvSet(brandKey(slug), merged);
   return merged;
 }
 
@@ -64,6 +51,6 @@ export async function lockVisualSystem(
   };
   brand.updatedAt = new Date().toISOString();
 
-  await fs.writeFile(brandPath(slug), JSON.stringify(brand, null, 2));
+  await kvSet(brandKey(slug), brand);
   return brand;
 }

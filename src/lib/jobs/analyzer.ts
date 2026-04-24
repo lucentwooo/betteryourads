@@ -70,7 +70,7 @@ export async function runFullAnalysis(jobId: string): Promise<void> {
           "Sending homepage screenshot to Claude for color extraction..."
         );
         const vision = await extractBrandColorsFromScreenshot(
-          websiteResult.screenshotPath
+          websiteResult.localScreenshotPath
         );
         if (vision) {
           finalColors = {

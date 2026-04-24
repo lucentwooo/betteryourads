@@ -1,6 +1,8 @@
 import puppeteer from "puppeteer";
 import path from "path";
+import fs from "fs/promises";
 import type { AdScreenshot } from "../types";
+import { putImage } from "../storage/image-store";
 
 interface MetaAdResult {
   success: boolean;
@@ -378,12 +380,19 @@ async function scrapeMetaAdLibraryInner(
 
         await (el as import("puppeteer").ElementHandle<Element>).scrollIntoView();
         await delay(400);
-        await (el as import("puppeteer").ElementHandle<Element>).screenshot({
-          path: screenshotPath,
-        });
+        const buf = Buffer.from(
+          await (el as import("puppeteer").ElementHandle<Element>).screenshot({ type: "png" })
+        );
+        await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
+        await fs.writeFile(screenshotPath, buf);
+
+        // Upload to Blob so the stored URL is portable across cold starts.
+        const jobIdLike = outputDir.replace(/\\/g, "/").split("/").slice(-1)[0];
+        const blobKey = `jobs/${jobIdLike}/ads/${prefix}-ad-${ads.length + 1}.png`;
+        const uploadedUrl = await putImage(blobKey, buf, "image/png");
 
         ads.push({
-          screenshotPath,
+          screenshotPath: uploadedUrl,
           copyText: card.text,
           adType: card.adType,
           source: "meta-ad-library",

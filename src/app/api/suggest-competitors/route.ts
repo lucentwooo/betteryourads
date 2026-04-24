@@ -3,6 +3,7 @@ import { suggestCompetitors } from "@/lib/ai/diagnosis";
 import { scrapeWebsite } from "@/lib/scraper/website-scraper";
 import path from "path";
 import fs from "fs/promises";
+import { STORAGE_ROOT } from "@/lib/storage-root";
 
 export async function POST(request: Request) {
   try {
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
       : `https://${companyUrl}`;
 
     // Quick scrape just for text content
-    const tmpDir = path.join(process.cwd(), "data", "jobs", "_temp");
+    const tmpDir = path.join(STORAGE_ROOT, "jobs", "_temp");
     await fs.mkdir(tmpDir, { recursive: true });
 
     let websiteContent = "";

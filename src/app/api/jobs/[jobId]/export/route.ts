@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
 import path from "path";
 import JSZip from "jszip";
 import { getJob } from "@/lib/jobs/manager";
+import { fetchImage } from "@/lib/storage/image-store";
 import type { Creative, Concept } from "@/lib/types";
 
 /**
@@ -31,10 +31,8 @@ export async function GET(
   for (const creative of job.creatives || []) {
     const concept = conceptById.get(creative.conceptId);
     if (!creative.imageUrl) continue;
-    const filename = path.basename(creative.imageUrl);
-    const localPath = path.join(process.cwd(), "data", "jobs", jobId, "creatives", filename);
     try {
-      const buf = await fs.readFile(localPath);
+      const buf = await fetchImage(creative.imageUrl);
       const stage = concept?.awarenessStage ?? "unknown";
       const name = stem(concept?.name ?? creative.id);
       zip.file(`creatives/${stage}/${name}.png`, new Uint8Array(buf));
