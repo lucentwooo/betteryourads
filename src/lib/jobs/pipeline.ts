@@ -352,20 +352,45 @@ export async function runNextStage(jobId: string): Promise<StageResult> {
   }
 }
 
-// Fire a request at our own /advance endpoint so the next stage runs in
-// a fresh serverless invocation (fresh 300s budget). We await the fetch
-// initiation — but not a full response — so it actually goes out before
-// the parent function is killed.
+// Run as many stages as we can inside a single invocation (each stage
+// loads state from KV at its start, so there's no downside to batching).
+// Only hand off to a fresh invocation when we're close to the 300s cap.
+const STAGE_BUDGET_MS = 240_000;
+
+export async function runStagesUntilBudget(
+  jobId: string
+): Promise<{ handoff: boolean }> {
+  const deadline = Date.now() + STAGE_BUDGET_MS;
+  while (Date.now() < deadline) {
+    const result = await runNextStage(jobId);
+    if (result.done) return { handoff: false };
+  }
+  return { handoff: true };
+}
+
+// Fire a request at our own /advance endpoint so the next batch of
+// stages runs in a fresh serverless invocation. On Vercel Preview
+// deployments, deployment protection blocks same-origin serverless
+// fetches unless we attach the bypass header. Enable "Protection Bypass
+// for Automation" in project settings — Vercel auto-provisions
+// VERCEL_AUTOMATION_BYPASS_SECRET.
 export async function triggerNextStage(jobId: string): Promise<void> {
   const base = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   const url = `${base}/api/jobs/${jobId}/advance`;
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (bypass) {
+    headers["x-vercel-protection-bypass"] = bypass;
+    headers["x-vercel-set-bypass-cookie"] = "true";
+  }
+
   try {
-    await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-    });
+    await fetch(url, { method: "POST", headers });
   } catch (err) {
     console.error(`Failed to trigger next stage for ${jobId}:`, err);
   }

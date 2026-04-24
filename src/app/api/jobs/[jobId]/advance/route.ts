@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
-import { runNextStage, triggerNextStage } from "@/lib/jobs/pipeline";
+import { runStagesUntilBudget, triggerNextStage } from "@/lib/jobs/pipeline";
 
 // Each /advance invocation runs exactly one pipeline stage, then fires
 // another /advance for the next stage. This keeps each invocation under
@@ -15,8 +15,8 @@ export async function POST(
 
   waitUntil(
     (async () => {
-      const result = await runNextStage(jobId);
-      if (!result.done) {
+      const result = await runStagesUntilBudget(jobId);
+      if (result.handoff) {
         await triggerNextStage(jobId);
       }
     })().catch((err) => {
