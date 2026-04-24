@@ -4,13 +4,13 @@ const nextConfig: NextConfig = {
   // Ship the ad-library reference assets into serverless functions so the
   // runtime loader can read them via process.cwd().
   outputFileTracingIncludes: {
-    "/**/*": [
-      "./src/lib/references/**/*",
-      // @sparticuz/chromium's compressed Chrome binary + swiftshader pack.
-      // Vercel's tracer doesn't pick these up automatically because they're
-      // loaded dynamically at runtime, not via static imports.
-      "./node_modules/@sparticuz/chromium/bin/**",
-    ],
+    // Reference assets — safe to ship everywhere, they're tiny.
+    "/**/*": ["./src/lib/references/**/*"],
+    // @sparticuz/chromium ships a ~60MB Chrome binary. Only bundle it into
+    // the routes that actually launch puppeteer, otherwise every function
+    // explodes past Vercel's 250MB limit.
+    "/api/suggest-competitors": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/analyze": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
   // @sparticuz/chromium ships a prebuilt Chrome binary and needs to locate
   // it at runtime via its own package path. If Next.js bundles it, the
