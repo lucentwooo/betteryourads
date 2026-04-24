@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import JSZip from "jszip";
 import { getJob } from "@/lib/jobs/manager";
+import { STORAGE_ROOT } from "@/lib/storage-root";
 import type { Creative, Concept } from "@/lib/types";
 
 /**
@@ -32,7 +33,7 @@ export async function GET(
     const concept = conceptById.get(creative.conceptId);
     if (!creative.imageUrl) continue;
     const filename = path.basename(creative.imageUrl);
-    const localPath = path.join(process.cwd(), "data", "jobs", jobId, "creatives", filename);
+    const localPath = path.join(STORAGE_ROOT, "jobs", jobId, "creatives", filename);
     try {
       const buf = await fs.readFile(localPath);
       const stage = concept?.awarenessStage ?? "unknown";

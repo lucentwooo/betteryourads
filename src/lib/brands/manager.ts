@@ -3,8 +3,9 @@ import path from "path";
 import type { Job } from "../types";
 import type { BrandRecord, LockedVisualSystem } from "./types";
 import { toSlug } from "./slug";
+import { STORAGE_ROOT } from "../storage-root";
 
-const BRANDS_DIR = path.join(process.cwd(), "data", "brands");
+const BRANDS_DIR = path.join(STORAGE_ROOT, "brands");
 
 async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
