@@ -117,7 +117,7 @@ A pass requires EVERY dimension to score >= ${params.passThreshold}. Be strict. 
     max_tokens: 2000,
     system: params.systemPrompt,
     messages: [{ role: "user", content: full }],
-  });
+  }, { timeout: 60_000 });
 
   const text = msg.content[0].type === "text" ? msg.content[0].text : "";
   const jsonMatch = text.match(/\{[\s\S]*\}/);

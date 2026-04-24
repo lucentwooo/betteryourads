@@ -39,7 +39,7 @@ export async function runStrategist(
         max_tokens: 8000,
         system: diagnosisSystemPrompt,
         messages: [{ role: "user", content: userPrompt }],
-      });
+      }, { timeout: 90_000 });
       const raw = msg.content[0].type === "text" ? msg.content[0].text : "";
       return parseDiagnosis(raw, params.voc);
     },

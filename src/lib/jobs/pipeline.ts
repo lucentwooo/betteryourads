@@ -12,7 +12,7 @@ import { generateBrandDosAndDonts } from "../ai/diagnosis";
 import { runResearcher } from "../agents/researcher";
 import { runStrategist } from "../agents/strategist";
 import { runCreativeDirector } from "../agents/creative-director";
-import type { BrandProfile, CompetitorData } from "../types";
+import type { BrandProfile, CompetitorData, DiagnosisResult, Job } from "../types";
 
 // Hard cap for any single Meta Ad Library scrape. Chromium cold-launch
 // in serverless can hang indefinitely on the tarball download; without a
@@ -20,6 +20,7 @@ import type { BrandProfile, CompetitorData } from "../types";
 // for that brand than break the whole pipeline.
 const META_SCRAPE_TIMEOUT_MS = 75_000;
 const WEBSITE_SCREENSHOT_TIMEOUT_MS = 45_000;
+const STRATEGIST_TIMEOUT_MS = 120_000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -323,37 +324,117 @@ async function stageResearcher(jobId: string): Promise<void> {
   await setStatus(jobId, "analyzing");
 }
 
+function fallbackDiagnosis(job: Job, reason: string): DiagnosisResult {
+  const company = job.input.companyName;
+  const competitors = (job.competitorData || []).map((c) => c.name).join(", ");
+  const websiteExcerpt = (job.websiteContent || "").slice(0, 500);
+  const vocPain =
+    job.voc?.painPoints?.slice(0, 3).map((p) => p.name).join(", ") ||
+    "limited VoC signal";
+
+  const raw = `## TL;DR
+${company} needs a clearer creative testing plan, but the full Strategist agent could not finish in time. Use this as a conservative fallback, then rerun analysis for a richer diagnosis.
+
+## Executive Summary
+- Website signal reviewed: ${websiteExcerpt || "not enough website text was available"}.
+- Competitor set reviewed: ${competitors || "no competitors supplied"}.
+- VoC patterns available: ${vocPain}.
+- Fallback reason: ${reason}.
+
+## Brand Profile
+${company} should keep the strongest recognizable brand cues from the website screenshot and avoid generic category visuals until the full diagnosis can complete.
+
+## Doing Well
+The pipeline found enough website and research context to continue into concept planning rather than blocking the user.
+
+## Not Working
+The diagnosis agent exceeded the production time budget. That makes the output less specific than the normal strategist pass.
+
+## Competitor Wins
+Competitor data was collected for: ${competitors || "none"}. Use these names as the starting benchmark for angle selection.
+
+## Missing Opportunities
+Test clearer problem-aware and product-aware hooks grounded in the strongest customer pain patterns: ${vocPain}.
+
+## Awareness Stage Analysis
+Prioritize Problem Aware and Solution Aware concepts first, then use Product Aware proof once stronger competitor and VoC evidence is available.
+
+## Recommended Next-Test Concepts
+1. Problem-aware pain callout for the main customer frustration.
+2. Solution-aware comparison against the most direct competitor.
+3. Product-aware proof ad using the website/product visual language.
+4. Objection-handling ad based on the strongest VoC objection.
+
+## Suggested Test Plan
+Run 3-4 fast concept tests with small budgets, then rerun the full strategist pass once the production timeout issue is resolved.`;
+
+  return {
+    tldr: `${company} needs a clearer creative testing plan; this is a fallback because the full Strategist agent timed out.`,
+    executiveSummary: `Website reviewed, competitors considered (${competitors || "none"}), VoC patterns considered (${vocPain}). Fallback reason: ${reason}.`,
+    brandProfile: `${company} should preserve recognizable brand cues from the website screenshot and avoid generic category visuals.`,
+    doingWell: "The pipeline collected enough context to continue into concept planning rather than blocking the user.",
+    notWorking: "The full diagnosis agent exceeded the production time budget, so this diagnosis is intentionally conservative.",
+    competitorWins: competitors
+      ? `Competitor data was collected for ${competitors}; use those brands as the benchmark.`
+      : "No competitor ad data was available for this fallback pass.",
+    missingOpportunities: `Test hooks grounded in the strongest customer pain patterns: ${vocPain}.`,
+    awarenessStageAnalysis: "Prioritize Problem Aware and Solution Aware concepts first, then layer Product Aware proof.",
+    recommendedConcepts: "Problem-aware pain callout; solution-aware comparison; product-aware proof; objection-handling ad.",
+    testPlan: "Run 3-4 fast concept tests with small budgets, then rerun the full strategist pass for a richer diagnosis.",
+    raw,
+    qa: {
+      pass: false,
+      score: 0,
+      issues: [`Fallback diagnosis used: ${reason}`],
+      feedbackForRetry: "Rerun strategist when the model responds within the production time budget.",
+      retries: 0,
+    },
+  };
+}
+
 async function stageStrategist(jobId: string): Promise<void> {
   const job = await getJob(jobId);
   if (!job || !job.voc || !job.brandProfile) return;
 
   await addProgress(jobId, "Strategist agent", "Running 8-area diagnosis with VoC integration", { agent: "strategist" });
 
-  const diagnosis = await runStrategist({
-    companyName: job.input.companyName,
-    companyUrl: job.input.companyUrl,
-    websiteContent: job.websiteContent || "",
-    landingPageContent: job.input.landingPageUrl ? job.websiteContent : undefined,
-    productDescription: job.input.productDescription,
-    icpDescription: job.input.icpDescription,
-    brandProfile: job.brandProfile,
-    companyAds: job.companyAds || [],
-    companyAdCount: job.companyAdCount,
-    companyVideoCount: job.companyVideoCount,
-    companyImageCount: job.companyImageCount,
-    competitors: job.competitorData || [],
-    notes: job.input.notes,
-    adContentDescription: job.input.adContentDescription,
-    voc: job.voc,
-  }, async (msg) => {
-    const outcome = msg.includes("pass")
-      ? "pass"
-      : msg.includes("retry")
-      ? "retry"
-      : msg.includes("escalate")
-      ? "escalate"
-      : undefined;
-    await addProgress(jobId, "Strategist", msg, { agent: "strategist", qaOutcome: outcome });
+  const diagnosis = await withTimeout(
+    runStrategist({
+      companyName: job.input.companyName,
+      companyUrl: job.input.companyUrl,
+      websiteContent: job.websiteContent || "",
+      landingPageContent: job.input.landingPageUrl ? job.websiteContent : undefined,
+      productDescription: job.input.productDescription,
+      icpDescription: job.input.icpDescription,
+      brandProfile: job.brandProfile,
+      companyAds: job.companyAds || [],
+      companyAdCount: job.companyAdCount,
+      companyVideoCount: job.companyVideoCount,
+      companyImageCount: job.companyImageCount,
+      competitors: job.competitorData || [],
+      notes: job.input.notes,
+      adContentDescription: job.input.adContentDescription,
+      voc: job.voc,
+    }, async (msg) => {
+      const outcome = msg.includes("pass")
+        ? "pass"
+        : msg.includes("retry")
+        ? "retry"
+        : msg.includes("escalate")
+        ? "escalate"
+        : undefined;
+      await addProgress(jobId, "Strategist", msg, { agent: "strategist", qaOutcome: outcome });
+    }),
+    STRATEGIST_TIMEOUT_MS,
+    "runStrategist"
+  ).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : "Strategist timed out";
+    console.error("[pipeline] strategist failed:", err);
+    await addProgress(jobId, "Strategist fallback", msg, {
+      agent: "strategist",
+      qaOutcome: "escalate",
+    });
+    return fallbackDiagnosis(job, msg);
   });
 
   await updateJob(jobId, { diagnosis });
