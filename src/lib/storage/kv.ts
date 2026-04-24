@@ -13,9 +13,16 @@ import { STORAGE_ROOT } from "../storage-root";
  * ./data/kv/<key>.json so you can still iterate without any cloud setup.
  */
 
-const hasRedis = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN;
+// Vercel Marketplace's Upstash integration provisions KV_REST_API_* names
+// (kept from the legacy Vercel KV product). Upstash's direct integrations
+// use UPSTASH_REDIS_REST_*. Accept both.
+const redisUrl =
+  process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const redisToken =
+  process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
-const redis: Redis | null = hasRedis ? Redis.fromEnv() : null;
+const redis: Redis | null =
+  redisUrl && redisToken ? new Redis({ url: redisUrl, token: redisToken }) : null;
 
 function localPath(key: string): string {
   // Redis-style "namespace:id" keys → file path namespace/id.json
