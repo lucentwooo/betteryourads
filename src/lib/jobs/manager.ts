@@ -8,6 +8,16 @@ import { STORAGE_ROOT } from "../storage-root";
 // Ephemeral in-process cache to avoid hammering KV within a single request.
 const jobs = new Map<string, Job>();
 
+// In local filesystem mode, the in-process cache is useful and coherent.
+// In Vercel/Redis mode, serverless instances can each hold a stale copy of
+// the same job. That makes the polling endpoint look frozen even after a
+// different invocation advanced the job in Redis.
+const canUseMemoryCache = !(
+  process.env.VERCEL ||
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL
+);
+
 function jobKey(id: string): string {
   return `job:${id}`;
 }
@@ -35,9 +45,9 @@ export async function createJob(input: AnalysisInput): Promise<Job> {
 }
 
 export async function getJob(id: string): Promise<Job | null> {
-  if (jobs.has(id)) return jobs.get(id)!;
+  if (canUseMemoryCache && jobs.has(id)) return jobs.get(id)!;
   const job = await kvGet<Job>(jobKey(id));
-  if (job) jobs.set(id, job);
+  if (job && canUseMemoryCache) jobs.set(id, job);
   return job;
 }
 
@@ -49,7 +59,7 @@ export async function updateJob(
   if (!job) return null;
 
   Object.assign(job, update);
-  jobs.set(id, job);
+  if (canUseMemoryCache) jobs.set(id, job);
   await persistJob(job);
 
   return job;
@@ -73,6 +83,7 @@ export async function addProgress(
   };
 
   job.progress.push(progressStep);
+  if (canUseMemoryCache) jobs.set(id, job);
   await persistJob(job);
 }
 
@@ -87,6 +98,7 @@ export async function setStatus(
   if (status === "complete" || status === "error") {
     job.completedAt = new Date().toISOString();
   }
+  if (canUseMemoryCache) jobs.set(id, job);
   await persistJob(job);
 }
 

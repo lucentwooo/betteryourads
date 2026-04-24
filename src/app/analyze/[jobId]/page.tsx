@@ -72,6 +72,12 @@ export default function AnalyzePage() {
       return;
     }
 
+    const justStartedScanner =
+      job.status === "scraping-website" &&
+      job.progress.length <= 1 &&
+      Date.now() - new Date(job.createdAt).getTime() < 10_000;
+    if (justStartedScanner) return;
+
     let cancelled = false;
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
