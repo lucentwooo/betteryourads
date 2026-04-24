@@ -18,7 +18,43 @@ export interface WebsiteScrapResult {
   page?: Page;
 }
 
+// Hard cap for the whole scrape: slow sites can otherwise eat the entire
+// function budget. Exceeding this throws so the pipeline's error handler
+// can mark the job as errored instead of hanging to a 300s timeout.
+const SCRAPE_TIMEOUT_MS = 90_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
 export async function scrapeWebsite(
+  url: string,
+  outputDir: string,
+  existingBrowser?: Browser
+): Promise<WebsiteScrapResult> {
+  return withTimeout(
+    scrapeWebsiteInner(url, outputDir, existingBrowser),
+    SCRAPE_TIMEOUT_MS,
+    `scrapeWebsite(${url})`
+  );
+}
+
+async function scrapeWebsiteInner(
   url: string,
   outputDir: string,
   existingBrowser?: Browser
@@ -33,66 +69,60 @@ export async function scrapeWebsite(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
 
+    // Short navigation timeout — if the site is that slow, fall through
+    // and screenshot whatever rendered. We don't retry with `load` because
+    // that can block for another 30s and often fails the same way on
+    // sites with broken third-party beacons.
     try {
       await page.goto(url, {
         waitUntil: "domcontentloaded",
-        timeout: 20000,
+        timeout: 15000,
       });
     } catch {
-      // If even domcontentloaded fails, try load with longer timeout
-      await page.goto(url, {
-        waitUntil: "load",
-        timeout: 30000,
-      }).catch(() => {});
+      // Continue with whatever state rendered.
     }
 
-    // Wait for content to render
-    await new Promise((r) => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 1500));
 
-    // Try to dismiss cookie banners -- common selectors
-    await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll("button, a"));
-      for (const btn of buttons) {
-        const text = (btn as HTMLElement).innerText?.toLowerCase() || "";
-        if (
-          text.includes("accept") ||
-          text.includes("allow all") ||
-          text.includes("got it") ||
-          text.includes("dismiss")
-        ) {
-          (btn as HTMLElement).click();
-          break;
+    // Try to dismiss cookie banners (best-effort, guarded against hangs)
+    await page
+      .evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll("button, a"));
+        for (const btn of buttons) {
+          const text = (btn as HTMLElement).innerText?.toLowerCase() || "";
+          if (
+            text.includes("accept") ||
+            text.includes("allow all") ||
+            text.includes("got it") ||
+            text.includes("dismiss")
+          ) {
+            (btn as HTMLElement).click();
+            break;
+          }
         }
-      }
-    });
-    await new Promise((r) => setTimeout(r, 800));
+      })
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 400));
 
-    // Scroll through the page to trigger scroll-reveal animations
-    await page.evaluate(async () => {
-      const scrollHeight = Math.min(
-        document.body.scrollHeight,
-        document.documentElement.scrollHeight,
-        8000
-      );
-      const step = 400;
-      for (let y = 0; y < scrollHeight; y += step) {
-        window.scrollTo({ top: y, behavior: "instant" });
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      // Return to top for clean screenshot
-      window.scrollTo({ top: 0, behavior: "instant" });
-      await new Promise((r) => setTimeout(r, 500));
-    });
-    await new Promise((r) => setTimeout(r, 1000));
+    // One short scroll to trigger lazy content, then back to top.
+    await page
+      .evaluate(async () => {
+        window.scrollTo({ top: 2000, behavior: "instant" });
+        await new Promise((r) => setTimeout(r, 300));
+        window.scrollTo({ top: 0, behavior: "instant" });
+        await new Promise((r) => setTimeout(r, 300));
+      })
+      .catch(() => {});
 
-    // Take full-page screenshot — capture as buffer so we can upload to Blob
-    // AND keep a local copy for in-pipeline tools that need filesystem access.
-    const buffer = Buffer.from(await page.screenshot({ fullPage: true, type: "png" }));
+    // Viewport-only screenshot (fullPage can OOM + hang on large pages in
+    // serverless). The hero is what the brand/vision agents care about.
+    const buffer = Buffer.from(
+      await page.screenshot({ fullPage: false, type: "png" })
+    );
     const localScreenshotPath = path.join(outputDir, "website-screenshot.png");
     await fs.mkdir(outputDir, { recursive: true });
     await fs.writeFile(localScreenshotPath, buffer);
 
-    // Key includes job-id-like folder so Blob keys stay collision-free.
     const blobKey = path.posix.join(
       "jobs",
       ...outputDir.replace(/\\/g, "/").split("/").slice(-1),
@@ -100,7 +130,6 @@ export async function scrapeWebsite(
     );
     const screenshotUrl = await putImage(blobKey, buffer, "image/png");
 
-    // Extract page data
     const pageData = await page.evaluate(() => {
       const title = document.title || "";
       const metaDesc =
@@ -112,12 +141,10 @@ export async function scrapeWebsite(
           .querySelector('meta[property="og:image"]')
           ?.getAttribute("content") || undefined;
 
-      // Get all heading text
       const headings = Array.from(
         document.querySelectorAll("h1, h2, h3")
       ).map((el) => el.textContent?.trim() || "");
 
-      // Get hero section content (first major section)
       const heroEl =
         document.querySelector("main > section:first-child") ||
         document.querySelector("main > div:first-child") ||
@@ -126,7 +153,6 @@ export async function scrapeWebsite(
         document.querySelector("header + div");
       const heroContent = heroEl?.textContent?.trim().slice(0, 2000) || "";
 
-      // Get full text content (limited)
       const textContent = document.body.innerText.slice(0, 10000);
 
       return { title, description: metaDesc, headings, heroContent, textContent, ogImage };
@@ -140,7 +166,7 @@ export async function scrapeWebsite(
     };
   } finally {
     if (ownBrowser) {
-      await browser.close();
+      await browser.close().catch(() => {});
     }
   }
 }
