@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**/*": [
       "./src/lib/references/**/*",
+      // @sparticuz/chromium's compressed Chrome binary + swiftshader pack.
+      // Vercel's tracer doesn't pick these up automatically because they're
+      // loaded dynamically at runtime, not via static imports.
+      "./node_modules/@sparticuz/chromium/bin/**",
     ],
   },
   // @sparticuz/chromium ships a prebuilt Chrome binary and needs to locate
