@@ -32,34 +32,47 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   await setStatus(jobId, "scraping-website");
   await addProgress(jobId, "Scanning website", `Loading ${job.input.companyUrl}...`);
 
-  const websiteResult = await scrapeWebsite(job.input.companyUrl, jobDir);
-  await updateJob(jobId, {
-    websiteScreenshot: websiteResult.screenshotPath,
-    websiteContent: websiteResult.textContent,
-  });
-  await addProgress(
-    jobId,
-    "Website scanned",
-    `Captured screenshot and extracted ${websiteResult.textContent.length} characters of content`
-  );
-
-  await setStatus(jobId, "extracting-brand");
-  await addProgress(jobId, "Extracting brand identity", "Analyzing colors, typography, and visual style...");
-
+  // One browser for the whole stage — scrapeWebsite loads the URL, then
+  // we reuse the same page for brand extraction. Saves a second cold
+  // chromium launch (~20-40s) and avoids retriggering the chromium-min
+  // extract race.
   const browser = await launchBrowser();
   let brandProfile: BrandProfile;
+  let websiteResult: Awaited<ReturnType<typeof scrapeWebsite>>;
   try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1440, height: 900 });
-    try {
-      await page.goto(job.input.companyUrl, {
-        waitUntil: "domcontentloaded",
-        timeout: 20000,
-      });
-    } catch {
-      // Continue even if nav is slow
+    websiteResult = await scrapeWebsite(
+      job.input.companyUrl,
+      jobDir,
+      browser
+    );
+    await updateJob(jobId, {
+      websiteScreenshot: websiteResult.screenshotPath,
+      websiteContent: websiteResult.textContent,
+    });
+    await addProgress(
+      jobId,
+      "Website scanned",
+      `Captured screenshot and extracted ${websiteResult.textContent.length} characters of content`
+    );
+
+    await setStatus(jobId, "extracting-brand");
+    await addProgress(jobId, "Extracting brand identity", "Analyzing colors, typography, and visual style...");
+
+    // scrapeWebsite left the page loaded on the target URL when we
+    // supplied an existing browser — reuse it directly.
+    const page = websiteResult.page ?? (await browser.newPage());
+    if (!websiteResult.page) {
+      await page.setViewport({ width: 1440, height: 900 });
+      try {
+        await page.goto(job.input.companyUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: 20000,
+        });
+      } catch {
+        // Continue even if nav is slow
+      }
+      await new Promise((r) => setTimeout(r, 2500));
     }
-    await new Promise((r) => setTimeout(r, 2500));
 
     const { profile } = await extractBrandFromPage(page);
 
@@ -375,23 +388,54 @@ export async function runStagesUntilBudget(
 // for Automation" in project settings — Vercel auto-provisions
 // VERCEL_AUTOMATION_BYPASS_SECRET.
 export async function triggerNextStage(jobId: string): Promise<void> {
-  const base = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
+  // Prefer branch-stable URL when available — the per-deployment VERCEL_URL
+  // on preview can 30X-redirect through auth even with the bypass header.
+  const host =
+    process.env.VERCEL_BRANCH_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL;
+  const base = host
+    ? `https://${host}`
     : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-  const url = `${base}/api/jobs/${jobId}/advance`;
+
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const qs = bypass
+    ? `?x-vercel-protection-bypass=${encodeURIComponent(
+        bypass
+      )}&x-vercel-set-bypass-cookie=true`
+    : "";
+  const url = `${base}/api/jobs/${jobId}/advance${qs}`;
 
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   if (bypass) {
     headers["x-vercel-protection-bypass"] = bypass;
     headers["x-vercel-set-bypass-cookie"] = "true";
   }
 
   try {
-    await fetch(url, { method: "POST", headers });
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      redirect: "manual",
+    });
+    // 0 (opaqueredirect), 3xx → protection bypass didn't take. Surface this
+    // in the job record so we don't silently hang at the current stage.
+    if (res.status === 0 || (res.status >= 300 && res.status < 400)) {
+      const msg = `Handoff to /advance got ${res.status}${
+        res.headers.get("location") ? ` → ${res.headers.get("location")}` : ""
+      }. Check VERCEL_AUTOMATION_BYPASS_SECRET / Protection Bypass for Automation setting.`;
+      console.error(msg);
+      await updateJob(jobId, { error: msg });
+      await setStatus(jobId, "error");
+      await addProgress(jobId, "Handoff failed", msg);
+    }
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error(`Failed to trigger next stage for ${jobId}:`, err);
+    await updateJob(jobId, { error: `Handoff fetch failed: ${msg}` });
+    await setStatus(jobId, "error");
+    await addProgress(jobId, "Handoff failed", msg);
   }
 }

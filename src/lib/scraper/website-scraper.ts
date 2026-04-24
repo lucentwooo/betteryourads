@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs/promises";
+import type { Browser, Page } from "puppeteer-core";
 import { putImage } from "../storage/image-store";
 import { launchBrowser } from "./browser";
 
@@ -12,13 +13,18 @@ export interface WebsiteScrapResult {
   headings: string[];
   heroContent: string;
   ogImage?: string;
+  // When callers pass their own browser via `existingBrowser`, we leave
+  // the page on the loaded URL so they can reuse it (e.g. brand extraction).
+  page?: Page;
 }
 
 export async function scrapeWebsite(
   url: string,
-  outputDir: string
+  outputDir: string,
+  existingBrowser?: Browser
 ): Promise<WebsiteScrapResult> {
-  const browser = await launchBrowser();
+  const browser = existingBrowser ?? (await launchBrowser());
+  const ownBrowser = !existingBrowser;
 
   try {
     const page = await browser.newPage();
@@ -130,8 +136,11 @@ export async function scrapeWebsite(
       screenshotPath: screenshotUrl,
       localScreenshotPath,
       ...pageData,
+      page: existingBrowser ? page : undefined,
     };
   } finally {
-    await browser.close();
+    if (ownBrowser) {
+      await browser.close();
+    }
   }
 }
