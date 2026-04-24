@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createJob } from "@/lib/jobs/manager";
+import { addProgress, createJob, setStatus } from "@/lib/jobs/manager";
 import type { AnalysisInput } from "@/lib/types";
 
 export const maxDuration = 30;
@@ -29,6 +29,12 @@ export async function POST(request: Request) {
     };
 
     const job = await createJob(input);
+    await setStatus(job.id, "scraping-website");
+    await addProgress(
+      job.id,
+      "Scanning website",
+      "Starting deployed scanner..."
+    );
 
     return NextResponse.json({ jobId: job.id });
   } catch (error) {
