@@ -6,16 +6,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     // Reference assets — safe to ship everywhere, they're tiny.
     "/**/*": ["./src/lib/references/**/*"],
-    // @sparticuz/chromium ships a ~60MB Chrome binary. Only bundle it into
-    // the routes that actually launch puppeteer, otherwise every function
-    // explodes past Vercel's 250MB limit.
-    "/api/suggest-competitors": ["./node_modules/@sparticuz/chromium/bin/**"],
-    "/api/analyze": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
-  // @sparticuz/chromium ships a prebuilt Chrome binary and needs to locate
-  // it at runtime via its own package path. If Next.js bundles it, the
-  // binary lookup breaks. Keep it (and puppeteer-core) as external modules.
-  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
+  // chromium-min + puppeteer-core need to resolve from node_modules at
+  // runtime. If Next.js bundles them, their dynamic lookups break.
+  serverExternalPackages: ["@sparticuz/chromium-min", "puppeteer-core"],
 };
 
 export default nextConfig;
