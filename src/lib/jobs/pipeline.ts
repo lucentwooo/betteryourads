@@ -2,7 +2,11 @@ import path from "path";
 import { getJob, updateJob, addProgress, setStatus, getJobDir } from "./manager";
 import { upsertBrandFromJob } from "../brands/manager";
 import { fetchPageText } from "../scraper/fetch-page";
-import { extractBrandColorsFromUrl } from "../ai/brand-vision";
+import { scrapeWebsite } from "../scraper/website-scraper";
+import {
+  extractBrandColorsFromScreenshot,
+  extractBrandColorsFromUrl,
+} from "../ai/brand-vision";
 import { scrapeMetaAdLibrary } from "../scraper/meta-ad-scraper";
 import { generateBrandDosAndDonts } from "../ai/diagnosis";
 import { runResearcher } from "../agents/researcher";
@@ -15,6 +19,7 @@ import type { BrandProfile, CompetitorData } from "../types";
 // timeout it chews the whole 300s function budget. We'd rather skip ads
 // for that brand than break the whole pipeline.
 const META_SCRAPE_TIMEOUT_MS = 75_000;
+const WEBSITE_SCREENSHOT_TIMEOUT_MS = 45_000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -70,34 +75,56 @@ export type StageResult = { done: boolean };
 async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   const job = await getJob(jobId);
   if (!job) return;
+  const jobDir = getJobDir(jobId);
 
   await setStatus(jobId, "scraping-website");
-  await addProgress(jobId, "Scanning website", `Loading ${job.input.companyUrl}...`);
+  await addProgress(
+    jobId,
+    "Scanning website",
+    `Capturing screenshot and reading ${job.input.companyUrl}...`
+  );
 
-  // No chromium in this stage. Serverless cold-start + tarball download
-  // from GitHub's CDN was burning the full 300s function budget and
-  // getting us nowhere. Plain fetch finishes in 1-3s and gives us
-  // everything the downstream agents actually need: title, meta, body
-  // text, og:image. Brand colors come from vision on the og:image when
-  // present; otherwise we fall back to a neutral default so the rest of
-  // the pipeline can still produce concepts.
-  const pageRes = await fetchPageText(job.input.companyUrl).catch((err) => {
-    console.error("[pipeline] fetchPageText failed:", err);
-    return null;
-  });
+  // Screenshot is the product promise, but it must not be a single point
+  // of failure. If Chromium cold-starts slowly or a site fights headless
+  // browsers, we fall back to fast HTML extraction and keep the pipeline
+  // moving instead of leaving users stuck on "Scanning site".
+  const [screenshotRes, pageRes] = await Promise.all([
+    withTimeout(
+      scrapeWebsite(job.input.companyUrl, jobDir),
+      WEBSITE_SCREENSHOT_TIMEOUT_MS,
+      `scrapeWebsite(${job.input.companyUrl})`
+    ).catch((err) => {
+      console.error("[pipeline] scrapeWebsite failed:", err);
+      return null;
+    }),
+    fetchPageText(job.input.companyUrl).catch((err) => {
+      console.error("[pipeline] fetchPageText failed:", err);
+      return null;
+    }),
+  ]);
 
   const websiteContent =
-    pageRes?.textContent || pageRes?.summary || `Company: ${job.input.companyName}`;
+    screenshotRes?.textContent ||
+    pageRes?.textContent ||
+    pageRes?.summary ||
+    `Company: ${job.input.companyName}`;
 
   await updateJob(jobId, {
     websiteContent,
+    ...(screenshotRes?.screenshotPath
+      ? { websiteScreenshot: screenshotRes.screenshotPath }
+      : pageRes?.ogImage
+      ? { websiteScreenshot: pageRes.ogImage }
+      : {}),
   });
   await addProgress(
     jobId,
     "Website scanned",
-    pageRes
-      ? `Extracted ${websiteContent.length} characters of content${
-          pageRes.ogImage ? " (og:image found)" : ""
+    screenshotRes
+      ? `Captured screenshot and extracted ${websiteContent.length} characters`
+      : pageRes
+      ? `Screenshot unavailable; extracted ${websiteContent.length} characters${
+          pageRes.ogImage ? " and found og:image" : ""
         }`
       : "Could not fetch homepage — continuing with company name only"
   );
@@ -106,16 +133,20 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   await addProgress(
     jobId,
     "Extracting brand identity",
-    pageRes?.ogImage
-      ? "Reading brand colors from og:image..."
+    screenshotRes?.localScreenshotPath
+      ? "Reading brand colors from website screenshot..."
+      : pageRes?.ogImage
+      ? "Screenshot unavailable — reading brand colors from og:image..."
       : "No og:image — using neutral default palette"
   );
 
   let profile: Omit<BrandProfile, "dosAndDonts"> = DEFAULT_BRAND;
-  if (pageRes?.ogImage) {
-    const vision = await extractBrandColorsFromUrl(pageRes.ogImage).catch(
-      () => null
-    );
+  if (screenshotRes?.localScreenshotPath || pageRes?.ogImage) {
+    const vision = screenshotRes?.localScreenshotPath
+      ? await extractBrandColorsFromScreenshot(screenshotRes.localScreenshotPath).catch(
+          () => null
+        )
+      : await extractBrandColorsFromUrl(pageRes!.ogImage!).catch(() => null);
     if (vision) {
       profile = {
         ...DEFAULT_BRAND,
@@ -149,12 +180,6 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   );
 
   const brandProfile: BrandProfile = { ...profile, dosAndDonts };
-
-  // Store og:image as the "websiteScreenshot" so the UI has something to
-  // render. Not a true hero screenshot, but a fast, reliable stand-in.
-  if (pageRes?.ogImage) {
-    await updateJob(jobId, { websiteScreenshot: pageRes.ogImage });
-  }
 
   await updateJob(jobId, { brandProfile });
   await addProgress(

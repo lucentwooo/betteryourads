@@ -19,9 +19,10 @@ export interface WebsiteScrapResult {
 }
 
 // Hard cap for the whole scrape: slow sites can otherwise eat the entire
-// function budget. Exceeding this throws so the pipeline's error handler
-// can mark the job as errored instead of hanging to a 300s timeout.
-const SCRAPE_TIMEOUT_MS = 90_000;
+// function budget. The pipeline treats screenshot failures as recoverable
+// and falls back to plain HTML extraction.
+const SCRAPE_TIMEOUT_MS = 40_000;
+const MAX_SCREENSHOT_HEIGHT = 8000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -64,6 +65,8 @@ async function scrapeWebsiteInner(
 
   try {
     const page = await browser.newPage();
+    page.setDefaultTimeout(10_000);
+    page.setDefaultNavigationTimeout(15_000);
     await page.setViewport({ width: 1440, height: 900 });
     await page.setUserAgent(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -114,10 +117,33 @@ async function scrapeWebsiteInner(
       })
       .catch(() => {});
 
-    // Viewport-only screenshot (fullPage can OOM + hang on large pages in
-    // serverless). The hero is what the brand/vision agents care about.
+    const pageHeight = await page
+      .evaluate(() => {
+        const body = document.body;
+        const html = document.documentElement;
+        return Math.max(
+          body?.scrollHeight || 0,
+          body?.offsetHeight || 0,
+          html?.clientHeight || 0,
+          html?.scrollHeight || 0,
+          html?.offsetHeight || 0
+        );
+      })
+      .catch(() => 900);
+    const captureHeight = Math.max(
+      900,
+      Math.min(Math.ceil(pageHeight), MAX_SCREENSHOT_HEIGHT)
+    );
+
+    // Capture from the top of the page down to a safe height cap. Puppeteer's
+    // fullPage mode can OOM on huge marketing pages in serverless, but a
+    // clipped capture still gives the UI and brand analysis a real website
+    // screenshot instead of an og:image stand-in.
     const buffer = Buffer.from(
-      await page.screenshot({ fullPage: false, type: "png" })
+      await page.screenshot({
+        type: "png",
+        clip: { x: 0, y: 0, width: 1440, height: captureHeight },
+      })
     );
     const localScreenshotPath = path.join(outputDir, "website-screenshot.png");
     await fs.mkdir(outputDir, { recursive: true });

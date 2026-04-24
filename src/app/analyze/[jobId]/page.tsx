@@ -29,6 +29,7 @@ export default function AnalyzePage() {
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string>("brand");
   const rootRef = useRef<HTMLElement | null>(null);
+  const advancingRef = useRef(false);
 
   const fetchJob = useCallback(async () => {
     try {
@@ -47,7 +48,11 @@ export default function AnalyzePage() {
   useEffect(() => {
     fetchJob();
     const interval = setInterval(() => {
-      if (job?.status === "complete" || job?.status === "error") {
+      if (
+        job?.status === "complete" ||
+        job?.status === "awaiting-approval" ||
+        job?.status === "error"
+      ) {
         clearInterval(interval);
         return;
       }
@@ -55,6 +60,60 @@ export default function AnalyzePage() {
     }, 2000);
     return () => clearInterval(interval);
   }, [fetchJob, job?.status]);
+
+  useEffect(() => {
+    if (
+      !job ||
+      job.status === "complete" ||
+      job.status === "awaiting-approval" ||
+      job.status === "error" ||
+      advancingRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function advanceUntilDone() {
+      advancingRef.current = true;
+      try {
+        while (!cancelled) {
+          const res = await fetch(`/api/jobs/${jobId}/advance`, {
+            method: "POST",
+          });
+          const data = (await res.json().catch(() => ({}))) as {
+            done?: boolean;
+            status?: Job["status"];
+          };
+
+          await fetchJob();
+
+          if (
+            !res.ok ||
+            data.done ||
+            data.status === "complete" ||
+            data.status === "awaiting-approval" ||
+            data.status === "error"
+          ) {
+            break;
+          }
+
+          await delay(250);
+        }
+      } catch (err) {
+        console.error("[analyze] advance failed; polling will keep retrying", err);
+        await delay(2000);
+      } finally {
+        advancingRef.current = false;
+      }
+    }
+
+    void advanceUntilDone();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchJob, job, jobId]);
 
   // Scroll reveals + active-section tracking. Runs once the report renders.
   useEffect(() => {

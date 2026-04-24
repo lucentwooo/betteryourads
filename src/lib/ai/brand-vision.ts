@@ -155,14 +155,17 @@ export async function extractBrandColorsFromUrl(
   try {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 10_000);
-    const res = await fetch(imageUrl, { signal: ac.signal });
-    clearTimeout(t);
-    if (!res.ok) return null;
-    const ct = res.headers.get("content-type") || "";
-    if (ct.startsWith("image/")) mediaType = ct.split(";")[0];
-    const arr = await res.arrayBuffer();
-    if (arr.byteLength > 4 * 1024 * 1024) return null;
-    buffer = Buffer.from(arr);
+    try {
+      const res = await fetch(imageUrl, { signal: ac.signal });
+      if (!res.ok) return null;
+      const ct = res.headers.get("content-type") || "";
+      if (ct.startsWith("image/")) mediaType = ct.split(";")[0];
+      const arr = await res.arrayBuffer();
+      if (arr.byteLength > 4 * 1024 * 1024) return null;
+      buffer = Buffer.from(arr);
+    } finally {
+      clearTimeout(t);
+    }
   } catch {
     return null;
   }
