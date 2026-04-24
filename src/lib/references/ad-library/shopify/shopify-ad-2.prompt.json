@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "shopify-ad-2",
+  "brand": "Shopify",
+  "source_image": "./shopify-ad-2.jpg",
+  "awareness_stage": "Solution Aware",
+  "register": "Editorial Creator-Business",
+
+  "creative_direction": {
+    "approach": "imagery-heavy",
+    "reasoning": "Collage of 4-5 layered photographs (founder portrait, product shots, brand artwork) at slight angles with subtle shadow — paper-cutout moodboard aesthetic. Image-gen produces the multi-layer collage; quote + attribution + Shopify logo composite in post.",
+    "concept_one_liner": "Paper-cutout collage of a Black founder (Olajuwon Ajanaku / Eastside Golf) and his brand work, with a 'right way' testimonial overlay."
+  },
+
+  "canvas": { "aspect_ratio": "9:16", "dimensions_px": "1080x1920", "placement": "Reels/Stories vertical" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake including quote + attribution + logo.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 light-gray editorial collage: top third holds a sans-serif pull-quote with attribution; middle two-thirds holds a collage of 4-5 overlapping photographs at slight angles — the HERO image is Olajuwon Ajanaku (a Black man in a varsity letterman jacket and ballcap, smiling, holding up a lavender purple sweatshirt featuring Eastside Golf's Black golfer illustration). Supporting collage images: a line-art illustration of a Black golfer figure mid-swing, a product shot of hangers with brown labels, a founder portrait in a crowd. Bottom-right: Shopify logo.",
+      "environment": { "canvas_background": "#EDEDED light warm gray" },
+      "camera": { "style": "editorial collage mixing photograph tiles and illustration tiles" },
+      "lighting": { "style": "subtle warm studio / natural on each tile" },
+      "color_palette": [
+        { "hex": "#EDEDED", "role": "canvas light gray", "coverage_pct": 25 },
+        { "hex": "#9B80BF", "role": "lavender purple sweatshirt hero", "coverage_pct": 18 },
+        { "hex": "#183A5C", "role": "navy varsity letterman jacket", "coverage_pct": 12 },
+        { "hex": "#F5F0E8", "role": "cream jacket arm + white top", "coverage_pct": 10 },
+        { "hex": "#4A3024", "role": "skin tone", "coverage_pct": 8 },
+        { "hex": "#000000", "role": "line-art illustration + typography", "coverage_pct": 12 },
+        { "hex": "#52A868", "role": "green illustration-panel background", "coverage_pct": 8 },
+        { "hex": "#7AB55C", "role": "Shopify green logo accent", "coverage_pct": 2 }
+      ],
+      "composition": {
+        "layout_archetype": "paper-cutout collage / moodboard",
+        "vertical_zones": [
+          "Top 5-18%: quote pull-quote + attribution, left-aligned, editorial sans",
+          "Middle 20-85%: collage of 4-5 layered image tiles (slight overlap, tilt ±5°, subtle paper shadow)",
+          "Bottom-right 88-95%: Shopify shopping bag + wordmark"
+        ],
+        "collage_layers": [
+          "HERO (center, largest ~45% of canvas width): Olajuwon portrait holding lavender sweatshirt",
+          "Behind-left tile: black-on-green line-art illustration panel of a Black golfer mid-swing",
+          "Behind-right tile: lavender hanging hangers with brown product tags",
+          "Small inset tile bottom-left: Black man in cap in a crowd (founder in audience, candid)",
+          "Small inset tile upper-right: a yellowish product/brand graphic framed"
+        ]
+      },
+      "style_directives": [
+        "moodboard / pinboard energy, not designed ad",
+        "each tile has slight drop shadow implying physical paper cutout",
+        "imperfect tile angles (±5°), some tiles overlap at edges",
+        "NOT a clean Instagram grid"
+      ],
+      "text_elements_in_image": [
+        { "role": "quote", "content": "\"If you're doing it the right\nway, you're on Shopify.\"", "font": "Editorial sans (Shopify Sans Regular or Inter Regular)", "size_relative": "42px", "color": "#1A1A1A", "alignment": "left", "line_height": "1.3" },
+        { "role": "attribution", "content": "Olajuwon Ajanaku\nFounder - Eastside Golf", "font": "Sans Bold for name, Regular for title", "size_relative": "18px", "color": "#1A1A1A", "alignment": "left", "position": "below quote with small gap" },
+        { "role": "shopify_logo", "content": "shopping bag icon + 'shopify' wordmark", "font": "Shopify Sans", "size_relative": "42px", "color": "#2D4A1B dark green or brand green", "position": "bottom-right ~x:70%, y:92%" }
+      ],
+      "negative_prompt": ["no rigid grid layout", "no clean seamless backgrounds inside tiles (keep them photo-realistic or illustration-realistic)", "no drop shadows on typography (only on tiles)", "no gradient", "no stock photography feel", "no over-polished portrait — Olajuwon should read as candid/real"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate the collage + hero portrait. Quote, attribution, and Shopify logo composite in post.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 light warm gray (#EDEDED) canvas. Middle 20-85%: collage of 4-5 layered image tiles at ±5° tilts with subtle paper-drop shadows. HERO tile (center, ~45% canvas width): a Black man in his 30s in a navy varsity letterman jacket with cream leather arms and a black ballcap, smiling, holding up a lavender purple sweatshirt that features a Black illustrated golfer figure on the front. Behind-left tile: green (#52A868) rectangle containing a black line-art illustration of a Black golfer mid-swing with a club. Behind-right tile: photograph of lavender/cream clothes on hangers with brown product tags. Small bottom-left tile: candid photograph of a Black man in a cap in a crowd. Small upper-right tile: framed product graphic. Top 18% and bottom 10% are empty light-gray space.",
+      "camera": { "style": "editorial moodboard — each tile lit individually" },
+      "color_palette": "see Track A",
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "quote", "bbox_pct": { "x": [6, 80], "y": [5, 14] } },
+          { "role": "attribution", "bbox_pct": { "x": [6, 60], "y": [14, 18] } },
+          { "role": "shopify_logo", "bbox_pct": { "x": [68, 94], "y": [88, 95] } }
+        ]
+      },
+      "negative_prompt": ["no overlay text", "no quote", "no attribution", "no Shopify logo"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "quote", "content": "\"If you're doing it the right way, you're on Shopify.\"", "font_family": "Inter Regular / Shopify Sans Regular", "weight": "400", "size_px": 42, "color_hex": "#1A1A1A", "position_bbox_pct": { "x": [6, 80], "y": [5, 14] }, "alignment": "left", "line_height": 1.3 },
+        { "role": "attribution", "content": "Olajuwon Ajanaku\nFounder - Eastside Golf", "font_family": "Inter SemiBold (name) + Inter Regular (title)", "size_px": 18, "color_hex": "#1A1A1A", "position_bbox_pct": { "x": [6, 60], "y": [14, 18] }, "alignment": "left" },
+        { "role": "shopify_logo", "source": "brand-kit/shopify-logo-green.svg", "size_px_height": 42, "position_bbox_pct": { "x": [68, 94], "y": [88, 95] }, "alignment": "right" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Eastside Golf brand artwork (Black golfer illustration)", "prompt_language_for_image_gen": "Line-art illustration of a Black golfer figure mid-swing, black ink on flat solid green (#52A868) background panel.", "fidelity_confidence": "medium" },
+      { "name": "Shopify logo (green version)", "fallback_composite_source": "brand-kit/shopify-logo-green.svg", "fidelity_confidence": "medium" }
+    ]
+  },
+
+  "patterns_exemplified": ["B12 paper-cutout collage for testimonials", "CP-5 occupation-based attribution", "C2 show customer's work, not your product", "C3 'right way' prescriptive positioning", "DP-1 proprietary illustration (Eastside Golf's own art)"],
+
+  "prompt_writer_training_notes": "Collage tile count matters (4-5 is sweet spot — fewer feels flat, more feels chaotic). Always specify slight tilt angle (±5°) and subtle paper-drop shadow on tiles. Hero-tile-plus-smaller-tiles is the correct hierarchy — if all tiles equal size, concept fails. Light warm gray canvas (#EDEDED) is deliberate — pure white reads corporate, cream reads DTC. Casting Olajuwon in varsity jacket is specific — 'varsity letterman jacket' phrase is distinct visual reference."
+}

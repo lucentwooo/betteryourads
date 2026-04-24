@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "shopify-ad-1",
+  "brand": "Shopify",
+  "source_image": "./shopify-ad-1.jpg",
+  "awareness_stage": "Problem → Solution Aware",
+  "register": "Creator / Maker Lifestyle",
+
+  "creative_direction": {
+    "approach": "imagery-heavy",
+    "reasoning": "Full-bleed 9:16 portrait photograph of two creator-founders in a thread/craft shop, with headline text sandwiched top and bottom. Photography is the ad; typography is overlay. Image-gen produces the full environmental portrait. Track B ideal for headline text accuracy.",
+    "concept_one_liner": "Creator-cast full-bleed portrait of two young makers with a split headline 'KICKSTART YOUR / BUSINESS' — cast the audience."
+  },
+
+  "canvas": { "aspect_ratio": "9:16", "dimensions_px": "1080x1920", "placement": "Reels/Stories vertical" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake with headline sandwich.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 full-bleed editorial lifestyle portrait: two young creator-founders (one with bleach-blonde shaggy hair in denim jacket over striped blue-and-white shirt; one with chunky streaked cropped hair in a cream knit sweater vest) stand side-by-side in what looks like a craft supply / thread shop, both smiling down at a black laptop on a counter in front of them. Behind them: a wall of colorful thread spools on hooks. Top 20% of canvas: white ExtraBold all-caps headline 'KICKSTART YOUR'. Bottom 15%: white ExtraBold all-caps headline 'BUSINESS'. Shopify wordmark + bag logo centered top in white.",
+      "subject": {
+        "description": "Two creator-founders, Gen Z styling, non-traditional — NOT polished talent/models, should feel like real creative people",
+        "left_subject": "young person, bleach blonde shaggy shoulder-length hair parted middle, denim jacket open over a blue-and-white striped collared shirt, a pale hand resting on counter, gold/chain jewelry subtle; relaxed smile",
+        "right_subject": "young person with short cropped hair with chunky streaks (dark + gray), cream-colored woven knit sweater vest over a white top, gold earrings, tattoo visible on arm, relaxed confident smile",
+        "action": "both looking down at a MacBook laptop on the counter in front of them, clearly in conversation/collaboration, not posed for camera",
+        "position_in_frame": "standing side-by-side, subjects fill center 60% of canvas, occupying middle 55% vertical"
+      },
+      "environment": {
+        "location": "craft supply or thread shop, daylight from camera-right",
+        "background_elements": "wall with horizontal rods from which hang hundreds of thread spools in pastel pinks/oranges/purples/greens/blues; some denim hanging on the left; a pair of scissors visible on the counter",
+        "counter": "light wood or white countertop"
+      },
+      "camera": { "lens_mm": 35, "aperture": "f/2.8", "angle": "eye-level, slightly above waist", "distance": "medium (both subjects framed from waist up)", "framing": "9:16 vertical" },
+      "lighting": { "key_light": "natural daylight from camera-right", "fill": "ambient bounce from pastel thread wall", "mood": "warm afternoon, authentic, lived-in", "shadows": "soft natural" },
+      "color_palette": [
+        { "hex": "#E8D4DC", "role": "pastel pink/peach thread wall dominance", "coverage_pct": 25 },
+        { "hex": "#C8B098", "role": "denim + wood counter warm tones", "coverage_pct": 15 },
+        { "hex": "#F5F0E8", "role": "cream sweater + overall lightness", "coverage_pct": 15 },
+        { "hex": "#4A3024", "role": "skin tones", "coverage_pct": 15 },
+        { "hex": "#1A1A1A", "role": "laptop body", "coverage_pct": 5 },
+        { "hex": "#FFFFFF", "role": "overlay typography", "coverage_pct": 20 }
+      ],
+      "composition": {
+        "layout_archetype": "text-sandwich on full-bleed portrait",
+        "focal_points": ["subjects' faces", "top headline", "bottom headline"],
+        "eye_flow": "top line → subjects' faces → bottom line"
+      },
+      "style_directives": [
+        "editorial / lookbook photography (reference: Glossier, Parade, Airbnb host campaigns)",
+        "NOT stock photography",
+        "casting should feel authentic — real-looking creators, not professional models",
+        "warm natural daylight, NOT studio-lit"
+      ],
+      "text_elements_in_image": [
+        { "role": "shopify_logo", "content": "(shopping bag icon) shopify", "font": "Shopify Sans ExtraBold", "size_relative": "34px", "color": "#FFFFFF", "position": "top-center, ~y:4%" },
+        { "role": "headline_top", "content": "KICKSTART YOUR", "font": "Shopify Sans ExtraBold (condensed) or Inter ExtraBold", "size_relative": "120px", "color": "#FFFFFF", "alignment": "center", "case": "ALL CAPS", "position": "top 10-22%", "kerning": "tight" },
+        { "role": "headline_bottom", "content": "BUSINESS", "font": "Shopify Sans ExtraBold (condensed)", "size_relative": "140px", "color": "#FFFFFF", "alignment": "center", "case": "ALL CAPS", "position": "bottom 82-94%", "kerning": "tight" }
+      ],
+      "negative_prompt": ["no stock photo models", "no studio seamless background", "no drop shadows on type", "no text outlines", "no gradient", "no 'smile at camera' energy — subjects must be engaged with laptop", "no generic retail store (specifically: thread wall)", "no emoji", "no exclamation marks"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate the full-bleed portrait only. All typography overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 editorial lifestyle portrait — see Track A subject + environment. NO overlay typography, NO Shopify logo, NO headline text anywhere.",
+      "camera": { "lens_mm": 35, "aperture": "f/2.8", "angle": "eye-level", "framing": "9:16" },
+      "color_palette": "See Track A minus overlay white.",
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "shopify_logo", "bbox_pct": { "x": [35, 65], "y": [3, 7] } },
+          { "role": "headline_top", "bbox_pct": { "x": [5, 95], "y": [9, 22] } },
+          { "role": "headline_bottom", "bbox_pct": { "x": [5, 95], "y": [82, 94] } }
+        ]
+      },
+      "negative_prompt": ["no text anywhere", "no Shopify logo", "no headline"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "shopify_logo", "source": "brand-kit/shopify-logo-white.svg", "size_px_height": 34, "position_bbox_pct": { "x": [35, 65], "y": [3, 7] }, "alignment": "center" },
+        { "role": "headline_top", "content": "KICKSTART YOUR", "font_family": "Shopify Sans ExtraBold or Inter ExtraBold (condensed)", "weight": "900", "size_px": 120, "color_hex": "#FFFFFF", "case": "ALL CAPS", "position_bbox_pct": { "x": [5, 95], "y": [9, 22] }, "alignment": "center", "letter_spacing": "-0.02em" },
+        { "role": "headline_bottom", "content": "BUSINESS", "font_family": "Shopify Sans ExtraBold (condensed)", "weight": "900", "size_px": 140, "color_hex": "#FFFFFF", "case": "ALL CAPS", "position_bbox_pct": { "x": [5, 95], "y": [82, 94] }, "alignment": "center", "letter_spacing": "-0.02em" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Shopify logo (shopping bag + wordmark)", "prompt_language_for_image_gen": "Small Shopify shopping bag icon (green S-shape inside bag) + 'shopify' lowercase wordmark, in white, ~34px tall.", "fallback_composite_source": "brand-kit/shopify-logo-white.svg", "fidelity_confidence": "medium" }
+    ]
+  },
+
+  "patterns_exemplified": ["B8 text sandwich on full-bleed portrait", "C4 cast the audience", "B7 logo-tiny as confidence", "B11 creator/maker lifestyle register"],
+
+  "prompt_writer_training_notes": "Casting language is CRITICAL — explicitly say 'real creator-founders, not professional models', 'non-traditional styling', 'Gen Z aesthetic'. Default image gen produces generic stock-model energy. Environment specificity (thread wall) is what makes it read as 'maker culture'; vague 'craft shop' wouldn't get there. Text sandwich split position (y:9-22% top, y:82-94% bottom) is a specific Reels-optimized layout — leaves room for Meta's platform CTA bar."
+}

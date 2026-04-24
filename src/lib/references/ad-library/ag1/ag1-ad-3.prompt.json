@@ -1,0 +1,110 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "ag1-ad-3",
+  "brand": "AG1",
+  "source_image": "./ag1-ad-3.jpg",
+  "awareness_stage": "Problem → Solution Aware",
+  "register": "Wellness DTC with creator/UGC crossover",
+
+  "creative_direction": {
+    "approach": "imagery-heavy",
+    "reasoning": "UGC-style portrait photograph (9:16) of a woman drinking AG1 from a shaker bottle, with a floating quote card + attribution label + offer stamp overlaid. Photo must feel creator-shot, not studio. Image-gen produces the full scene; quote card, attribution, and stamp composite in post for typographic accuracy.",
+    "concept_one_liner": "UGC-style portrait of a relatable woman mid-drink, with editorial quote card and retro FREE stamp — feels like a friend's post, not an ad."
+  },
+
+  "canvas": { "aspect_ratio": "9:16", "dimensions_px": "1080x1920", "placement": "Reels/Stories vertical" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake with quote, attribution, and offer stamp overlaid in the image gen pass.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 creator-style portrait photograph in natural outdoor daylight: a 30-something white/Latina woman with dark brown hair pulled back in a ponytail, mid-drink from a clear shaker bottle filled with dark green AG1 liquid. She's in a residential street or park setting. Over the photo float three graphic elements: a rounded white quote card in the upper third, a dark green attribution label below it, and a tilted retro-style green FREE stamp circle in the bottom-right.",
+      "subject": {
+        "description": "Woman in her 30s, dark brown hair in low ponytail, side profile slightly angled toward camera, holding a clear plastic shaker bottle with her right hand up at mouth level, drinking",
+        "wardrobe": "coral/salmon pink sleeveless tank top",
+        "skin": "warm mid-tone, natural / unretouched feel",
+        "expression": "eyes closed or half-closed, natural mid-sip expression (not posed)",
+        "position_in_frame": "centered, occupying lower 65% of vertical frame, head at around y:35%"
+      },
+      "environment": {
+        "location": "residential street or neighborhood park in mid-afternoon light",
+        "background_elements": "soft out-of-focus bokeh of trees and maybe a light-colored building, pale gray-green palette",
+        "props": "clear plastic shaker bottle, black screw-cap, filled with dark green AG1 liquid"
+      },
+      "camera": { "lens_mm": 50, "aperture": "f/2.0", "angle": "eye-level, slightly below subject", "distance": "medium-tight", "framing": "9:16 vertical, shallow depth of field" },
+      "lighting": { "key_light": "natural overcast or backlit afternoon sun from upper-left", "fill": "ambient bounce from nearby surfaces", "mood": "real-moment, natural, not staged", "shadows": "soft natural shadows, no studio control" },
+      "color_palette": [
+        { "hex": "#D4DCD0", "role": "blurred background foliage/buildings", "coverage_pct": 40 },
+        { "hex": "#D97A82", "role": "coral/salmon tank top", "coverage_pct": 20 },
+        { "hex": "#6B5A4F", "role": "skin + hair", "coverage_pct": 20 },
+        { "hex": "#1E3A34", "role": "AG1 green liquid + attribution + stamp", "coverage_pct": 12 },
+        { "hex": "#FFFFFF", "role": "quote card", "coverage_pct": 6 }
+      ],
+      "composition": {
+        "layout_archetype": "UGC portrait + overlay-graphic stamps (Instagram story aesthetic)",
+        "focal_points": ["subject's face + bottle", "floating quote card", "FREE stamp"],
+        "eye_flow": "start at woman drinking, drift up to quote card, drift down-right to FREE stamp"
+      },
+      "style_directives": [
+        "creator-shot / UGC feel — NOT studio photography",
+        "shallow DOF with natural bokeh",
+        "subtle film grain or natural digital noise",
+        "reference: Ritual, Olipop creator ads, AG1's own influencer-campaign work"
+      ],
+      "overlay_graphics": {
+        "quote_card": "rounded white rectangle (~20px radius) occupying approximately x:10-90%, y:8-22% of canvas, with soft drop shadow (4-8px blur) giving it a 'taped onto the photo' sticker feel; contains quote text inside",
+        "attribution_label": "dark forest green (#1E3A34) rounded pill label, approximately x:55-85%, y:22-26%, white text inside",
+        "free_stamp": "tilted ~15° counterclockwise, circular, ~130px diameter, dark forest green (#1E3A34) fill, white text, retro grocery-flyer style, positioned bottom-right around x:70-90%, y:70-80%"
+      },
+      "text_elements_in_image": [
+        { "role": "quote", "content": "\"It's really amazing\nhow I just feel\nmore supported\nin my gut health.\"", "font": "Editorial high-contrast serif (Canela)", "size_relative": "38px", "color": "#1E3A34", "position": "inside white quote card", "italic_substrings": ["more supported in my gut health"] },
+        { "role": "attribution", "content": "Real AG1 Member\nAnna C.\nScience Teacher", "font": "Sans — line 1 italic small caps, line 2 SemiBold italic, line 3 italic", "size_relative": "18px", "color": "#FFFFFF", "position": "inside dark green attribution pill label, right-aligned" },
+        { "role": "free_stamp", "content": "Claim Your\nFREE\nWelcome Kit", "font": "Retro sans — 'Claim Your' italic sans, 'FREE' all-caps bold, 'Welcome Kit' italic sans", "size_relative": "varies: FREE is ~32px, others ~16px", "color": "#FFFFFF", "style": "tilted ~15° CCW, inside circular green stamp" },
+        { "role": "legal", "content": "**Offer Valid For New Subscribers Only", "font": "Sans Regular tiny", "size_relative": "11px", "color": "#5A5A5A", "position": "bottom-left ~x:3%, y:93%" }
+      ],
+      "negative_prompt": ["no studio-lit portrait feel", "no posed smile looking at camera", "no clean seamless white background", "no retouched / beauty-ad skin", "no AG1 logo overlays (branding through the attribution label only)", "no emoji", "no drop shadows on text (only on the quote-card sticker element)"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate the UGC portrait photograph only. Empty white quote card, empty green attribution label, and empty green FREE stamp rendered as shapes without text. All text overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 creator-style outdoor portrait: 30-something woman with dark ponytail in coral/salmon tank top, mid-drink from a clear shaker bottle filled with dark green AG1 liquid. Natural daylight, shallow DOF, blurred foliage background. Floating over the photo: an empty rounded white card in upper third (no text), an empty dark green pill label below it, and an empty tilted dark green circular stamp in bottom-right.",
+      "camera": { "lens_mm": 50, "aperture": "f/2.0", "angle": "eye-level slightly below", "framing": "9:16 vertical" },
+      "lighting": { "style": "natural outdoor daylight, shallow DOF" },
+      "color_palette": [
+        { "hex": "#D4DCD0", "role": "blurred background" },
+        { "hex": "#D97A82", "role": "coral tank" },
+        { "hex": "#1E3A34", "role": "AG1 green (liquid + labels + stamp)" },
+        { "hex": "#FFFFFF", "role": "quote card" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "quote", "bbox_pct": { "x": [10, 90], "y": [8, 22] } },
+          { "role": "attribution", "bbox_pct": { "x": [55, 85], "y": [22, 26] } },
+          { "role": "free_stamp_text", "bbox_pct": { "x": [70, 90], "y": [70, 80] } },
+          { "role": "legal", "bbox_pct": { "x": [3, 50], "y": [93, 97] } }
+        ]
+      },
+      "negative_prompt": ["no baked-in text in any overlay shape (card, label, stamp are empty)", "no AG1 logos", "no studio photography feel"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "quote", "content": "\"It's really amazing how I just feel more supported in my gut health.\"", "font_family": "Canela / Tiempos editorial serif", "weight": "500", "size_px": 38, "color_hex": "#1E3A34", "position_bbox_pct": { "x": [12, 88], "y": [9, 21] }, "alignment": "center", "line_height": 1.25, "italic_substrings": ["more supported in my gut health"] },
+        { "role": "attribution", "content": "Real AG1 Member\nAnna C.\nScience Teacher", "font_family": "Clean sans italic", "weights_per_line": ["Regular italic small-caps", "SemiBold italic", "Regular italic"], "size_px": 18, "color_hex": "#FFFFFF", "position_bbox_pct": { "x": [56, 84], "y": [22, 26] }, "alignment": "right", "line_height": 1.3 },
+        { "role": "free_stamp_text", "content": "Claim Your\nFREE\nWelcome Kit", "font_family": "Retro sans mixed styles", "size_px_per_line": [16, 32, 16], "color_hex": "#FFFFFF", "position_bbox_pct": { "x": [70, 90], "y": [70, 80] }, "alignment": "center", "rotation_deg": -15 },
+        { "role": "legal", "content": "**Offer Valid For New Subscribers Only", "font_family": "Sans Regular", "size_px": 11, "color_hex": "#5A5A5A", "position_bbox_pct": { "x": [3, 50], "y": [93, 97] } }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "AG1 shaker bottle", "prompt_language_for_image_gen": "Clear plastic shaker bottle with black screw cap, 'AG1' in white text on the side of the bottle, filled with opaque dark green (#1E3A34) liquid.", "fidelity_confidence": "medium" },
+      { "name": "FREE stamp graphic", "prompt_language_for_image_gen": "Retro flyer-style circular stamp: dark forest green (#1E3A34) solid fill, ~130px diameter, tilted 15° counterclockwise, white text inside.", "fidelity_confidence": "medium" }
+    ]
+  },
+
+  "patterns_exemplified": ["CP-4 italic-within-quote", "CP-5 occupation attribution", "DP-2 editorial serif on UGC photo", "C4 cast-the-audience", "DP-14 hand-painted/analog accent (retro stamp)"],
+
+  "prompt_writer_training_notes": "UGC feel is harder for image gen than studio — must explicitly say 'creator-shot', 'shallow DOF with natural bokeh', 'NOT studio photography', 'subtle film grain'. Default output is too clean/polished. Coral tank (#D97A82) + dark green liquid is deliberate complementary contrast — don't substitute with neutral colors. Retro FREE stamp tilt (-15°) is the single flourish breaking the clean design — a deliberate tonal tension per the design analysis."
+}

@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "duolingo-ad-1",
+  "brand": "Duolingo",
+  "source_image": "./duolingo-ad-1.jpg",
+  "awareness_stage": "Solution Aware",
+  "register": "Youth / Gamified Consumer",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Duo the owl mascot is a proprietary brand asset that must be rendered in Duolingo's exact house illustration style — image gen needs a specific prompt or a composite from the brand kit. Phone UI card with language list + flags requires recognizable flag accuracy. Track B: generate saturated blue canvas + mascot + phone card frame with flag icons; overlay headline.",
+    "concept_one_liner": "Duo peeks toward a phone card showing 10 languages with flags — breadth claim without bullet points."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake.",
+    "nano_banana_json": {
+      "scene": "Saturated cobalt blue canvas with the two-line white sans headline 'Start building your / language fluency' in the top-left, Duo the owl mascot peeking in from the middle-left, a stylized phone-UI card on the right showing a 'Courses' list with country-flag icons, and the 'duolingo' lowercase wordmark in the bottom-left corner.",
+      "environment": { "canvas_background": "#1CB0F6 Duolingo signature cobalt blue" },
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat illustration render, no shadows" },
+      "color_palette": [
+        { "hex": "#1CB0F6", "role": "canvas cobalt", "coverage_pct": 55 },
+        { "hex": "#58CC02", "role": "Duo owl body green", "coverage_pct": 18 },
+        { "hex": "#FFFFFF", "role": "headline + wordmark + phone card surface", "coverage_pct": 20 },
+        { "hex": "#FFA916", "role": "Duo beak/feet orange", "coverage_pct": 3 },
+        { "hex": "#000000", "role": "Duo eye outlines + flag detail ink", "coverage_pct": 2 }
+      ],
+      "composition": {
+        "layout_archetype": "split-screen asymmetric (mascot left / product-UI right)",
+        "zones": [
+          "Top 8-30%: headline 'Start building your / language fluency' in white ExtraBold rounded sans (Duolingo Feather), 2 lines, top-left aligned",
+          "Middle-left 30-75%: Duo the owl mascot peeking in from left edge, only ~70% of body visible, gaze points right toward phone card",
+          "Right 40-95%: white rounded-rectangle phone card showing 'Courses' header and a vertical list of languages each with a flag icon and chevron (Spanish, French, German, Italian, Japanese, Chinese, Russian, Korean, Portuguese, Arabic)",
+          "Bottom-left: 'duolingo' lowercase wordmark in white rounded sans"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Start building your\nlanguage fluency", "font": "Duolingo Feather Bold (or Nunito Rounded ExtraBold — rounded geometric sans)", "size_relative": "68px", "color": "#FFFFFF", "alignment": "left", "case": "sentence case", "line_height": "1.05" },
+        { "role": "wordmark", "content": "duolingo", "font": "Duolingo Feather Bold lowercase", "size_relative": "56px", "color": "#FFFFFF" },
+        { "role": "phone_ui_courses_label", "content": "Courses", "font": "Nunito Rounded Bold", "size_relative": "24px", "color": "#3C3C3C" },
+        { "role": "course_row_labels", "content_list": ["Spanish", "French", "German", "Italian", "Japanese", "Chinese", "Russian", "Korean", "Portuguese", "Arabic"], "font": "Nunito Rounded SemiBold", "size_relative": "20px", "color": "#3C3C3C" }
+      ],
+      "duo_mascot_spec": "Duo the owl: cartoon flat-color illustration, bright green (#58CC02) body, oval shape, big white eyes with black pupils, small orange triangular beak (#FFA916), tiny orange triangular feet visible at bottom. Peeking in from left edge — only front half of body visible, head tilted slightly, expression curious/smiling. NO drop shadow. Drawn in Duolingo's official house illustration style.",
+      "phone_card_spec": "Large rounded-rectangle white card (no phone chrome, just a card) occupying the right 55% of canvas. 'Courses' header in medium sans top-center. Below: vertical list of 10 language rows, each row has a circular country flag icon on the left (~36px), language name in the center (left-aligned), and a > chevron on the right. Flags: Spain (red/yellow/red horizontal), France (blue/white/red vertical), Germany (black/red/yellow horizontal), Italy (green/white/red vertical), Japan (white with red circle), China (red with yellow stars), Russia (white/blue/red horizontal), South Korea (white with red/blue yin-yang), Brazil (green with yellow diamond and blue globe — representing Portuguese), Saudi Arabia (green with white text — representing Arabic).",
+      "negative_prompt": ["no photorealism", "no drop shadows", "no gradient", "no stock mascot", "Duo must be in Duolingo's official style (not generic cartoon owl)", "no flag inaccuracies", "no dark backgrounds (canvas must be saturated cobalt)", "no exclamation marks", "no emoji in copy"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate blue canvas + Duo mascot + phone card with flags. All typography overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Saturated Duolingo cobalt blue #1CB0F6 canvas 1080x1080. Duo the owl cartoon mascot (bright green #58CC02 oval body, big white eyes with black pupils, orange triangular beak, flat illustration style) peeking in from left edge ~30% from top, occupying middle-left region. On the right 55%: a large white rounded-rectangle card with 'Courses' header in medium sans, and 10 language rows each with a country flag circle, language name, and chevron (Spanish, French, German, Italian, Japanese, Chinese, Russian, Korean, Portuguese, Arabic). Top-left reserved empty blue space for headline. Bottom-left reserved for wordmark.",
+      "camera": { "style": "flat illustration" },
+      "color_palette": [
+        { "hex": "#1CB0F6", "role": "canvas" },
+        { "hex": "#58CC02", "role": "Duo" },
+        { "hex": "#FFFFFF", "role": "card + text" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [6, 50], "y": [8, 30] } },
+          { "role": "wordmark", "bbox_pct": { "x": [6, 38], "y": [88, 95] } }
+        ]
+      },
+      "negative_prompt": ["no headline text (reserved zone must be empty blue)", "no wordmark text (reserved zone must be empty blue)", "keep the 'Courses' label and language row labels inside the phone card (those ARE part of the generated UI)"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "Start building your\nlanguage fluency", "font_family": "Duolingo Feather Bold / Nunito Rounded ExtraBold", "weight": "800", "size_px": 68, "color_hex": "#FFFFFF", "position_bbox_pct": { "x": [6, 50], "y": [8, 30] }, "alignment": "left", "line_height": 1.05 },
+        { "role": "wordmark", "content": "duolingo", "font_family": "Duolingo Feather Bold", "weight": "700", "size_px": 56, "color_hex": "#FFFFFF", "case": "lowercase", "position_bbox_pct": { "x": [6, 38], "y": [88, 95] }, "alignment": "left" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Duo the owl mascot", "prompt_language_for_image_gen": "See duo_mascot_spec above. Cartoon flat-color illustration, bright green body, big white eyes with black pupils, orange triangular beak. Official Duolingo house style — NOT a generic cartoon owl.", "fallback_composite_source": "brand-kit/duolingo/duo-peeking.svg", "fidelity_confidence": "low — image-gen often misses the Duolingo-specific stylization; composite recommended" },
+      { "name": "Duolingo wordmark", "prompt_language_for_image_gen": "'duolingo' lowercase, Duolingo's custom Feather Bold type, rounded terminals, white.", "fallback_composite_source": "brand-kit/duolingo/wordmark.svg", "fidelity_confidence": "medium" },
+      { "name": "Country flag icons (10)", "prompt_language_for_image_gen": "Ten circular flag icons with accurate flag designs — see phone_card_spec.", "fallback_composite_source": "brand-kit/flags/*.svg", "fidelity_confidence": "medium — flags are well-trained but details may be off" }
+    ]
+  },
+
+  "patterns_exemplified": ["B9 mascot peeking into product UI", "B4 saturated single-color brand background", "DP-1 proprietary mascot", "A2 flag grid as implicit breadth"],
+
+  "prompt_writer_training_notes": "Duo the owl is hard — name 'Duolingo Feather Bold' type + 'Duolingo's official house illustration style' explicitly. Generic 'cartoon owl' produces wrong output. Saturated cobalt (#1CB0F6) is the brand — never pale blue. Flag list is a breadth signal; all 10 languages must be listed (not abbreviated). Lowercase wordmark is intentional — do not auto-capitalize."
+}

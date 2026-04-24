@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "notion-ad-1",
+  "brand": "Notion",
+  "source_image": "./notion-ad-1.jpg",
+  "awareness_stage": "Product Aware",
+  "register": "SaaS/B2B Editorial",
+
+  "creative_direction": {
+    "approach": "typography-heavy",
+    "reasoning": "The entire ad is text plus a thin strip of product UI + mascot row. No hero imagery. Track B is mandatory — the massive headline, blue CTA, and dollar figure must be pixel-perfect. Background only needs the off-white canvas + bottom footer strip (UI thumbnails + 6 mascot faces).",
+    "concept_one_liner": "Dollar-anchored headline dominates, product + mascot footer provides trust layer."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full ad including typography in a single image-gen call.",
+    "nano_banana_json": {
+      "scene": "Editorial SaaS ad, flat-lay graphic composition. Off-white canvas with a massive 3-line black sans-serif headline centered upper-third, a bright blue pill CTA below, a small italic tagline below that, and a bottom strip showing miniature Notion product UI screenshots on the left overlapping with a horizontal row of 6 illustrated face mascots on the right.",
+      "subject": { "description": "Three-line ExtraBold black sans headline: 'Get up to / $12,000 of / Free Notion'", "position_in_frame": "centered, upper 40%" },
+      "environment": { "canvas_background": "#F7F7F5 off-white", "props": [], "background_elements": [] },
+      "camera": { "lens_mm": null, "aperture": null, "angle": "flat graphic, top-down", "framing": "1:1" },
+      "lighting": { "style": "flat render, no shadows, no depth" },
+      "color_palette": [
+        { "hex": "#F7F7F5", "role": "canvas off-white", "coverage_pct": 60 },
+        { "hex": "#000000", "role": "primary typography", "coverage_pct": 25 },
+        { "hex": "#2D7FF9", "role": "Free Trial CTA pill fill", "coverage_pct": 8 },
+        { "hex": "#FFFFFF", "role": "CTA text", "coverage_pct": 2 }
+      ],
+      "composition": {
+        "layout_archetype": "centered editorial poster",
+        "focal_points": ["headline", "blue CTA pill", "bottom footer strip"],
+        "negative_space_pct": 30,
+        "vertical_zones": [
+          "Top 8%: Notion N logo + wordmark, small, centered",
+          "Top 12-52%: three-line headline",
+          "Center 58-68%: blue pill CTA 'Free Trial with AI Access' in white sans",
+          "Below CTA: italic tagline 'Smart Collaboration Meets AI Automation'",
+          "Bottom 25%: left — 2 overlapping Notion product UI thumbnails (Product board + Projects Kanban); right — horizontal row of 6 circular face mascots in Notion's scribble-drawn house style"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Get up to\n$12,000 of\nFree Notion", "font": "Geometric ExtraBold sans (Inter/Söhne)", "size_relative": "130px", "color": "#000000", "alignment": "center", "line_height": "0.95" },
+        { "role": "cta_pill", "content": "Free Trial with AI Access", "font": "Sans SemiBold", "size_relative": "38px", "color": "#FFFFFF", "button_fill": "#2D7FF9", "button_radius": "fully pilled" },
+        { "role": "tagline", "content": "Smart Collaboration Meets AI Automation", "font": "Sans SemiBold Italic", "size_relative": "34px", "color": "#000000" }
+      ],
+      "negative_prompt": ["no drop shadows on text", "no gradient", "no stock photography", "no emoji", "no exclamation marks", "no photorealism"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Background + bottom footer strip only. All text composited in post.",
+    "nano_banana_json": {
+      "scene": "Off-white #F7F7F5 canvas 1080x1080 with a small Notion N logo + wordmark centered in the top 8% and a bottom 25% footer strip.",
+      "footer_strip_content": "Left half: 2 small rounded-corner Notion product UI thumbnails (one showing 'Product' database with status columns, one showing 'Projects' kanban with Not started/In progress/Done columns) overlapping at slight angles. Right half: horizontal row of 6 round (circular) illustrated face mascots drawn in Notion's scribble house style — each ~80px diameter, distinct expressions (checkmark eyes, pencil hair, book, flower, cowboy hat) in Notion's orange/pink/yellow/blue/red palette, all with simple black line faces.",
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat render, no shadows" },
+      "color_palette": [
+        { "hex": "#F7F7F5", "role": "canvas" },
+        { "hex": "#000000", "role": "logo + UI ink" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [8, 92], "y": [12, 52] }, "keep_as_negative_space": true },
+          { "role": "cta_pill", "bbox_pct": { "x": [15, 85], "y": [56, 68] } },
+          { "role": "tagline", "bbox_pct": { "x": [10, 90], "y": [68, 74] } }
+        ]
+      },
+      "negative_prompt": ["no headline text", "no CTA pill", "no tagline", "no body text", "no text in upper and middle zones"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "Get up to\n$12,000 of\nFree Notion", "font_family": "Inter/Söhne ExtraBold", "weight": "800", "size_px": 130, "color_hex": "#000000", "position_bbox_pct": { "x": [8, 92], "y": [12, 52] }, "alignment": "center", "line_height": 0.95, "letter_spacing": "-0.02em" },
+        { "role": "cta_pill", "content": "Free Trial with AI Access", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 38, "color_hex": "#FFFFFF", "pill_fill_hex": "#2D7FF9", "pill_radius_px": 999, "position_bbox_pct": { "x": [15, 85], "y": [56, 68] }, "alignment": "center" },
+        { "role": "tagline", "content": "Smart Collaboration Meets AI Automation", "font_family": "Inter/Söhne SemiBold Italic", "weight": "600", "size_px": 34, "color_hex": "#000000", "position_bbox_pct": { "x": [10, 90], "y": [68, 74] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Notion N logo + wordmark", "prompt_language_for_image_gen": "Small geometric black-and-white 'N' icon with subtle 3D paper-fold, next to 'Notion' wordmark in ExtraBold sans, total ~40px tall, top-center.", "fallback_composite_source": "brand-kit/notion-logo.svg", "fidelity_confidence": "medium" },
+      { "name": "Notion illustration mascot row (6 characters)", "prompt_language_for_image_gen": "Six circular face mascots drawn in Notion's proprietary scribble-line-art house style: flat pastel backgrounds (yellow, orange, blue, pink, red, tan), simple black line faces, one with checkmark eyes, one with pencil, one with blue square-eyes, one with flower crown, one reading a book, one wearing a cowboy hat. Each ~80px, arranged in a single horizontal row.", "fallback_composite_source": "brand-kit/notion-mascots/*.svg", "fidelity_confidence": "low — composite recommended" },
+      { "name": "Product UI thumbnails", "prompt_language_for_image_gen": "Two small Notion UI database screenshots: a 'Product' board with status columns (Planning, In progress, Complete) and a 'Projects' kanban with 'Not started', 'In progress', 'Done' columns. Legible but tiny.", "fallback_composite_source": "brand-kit/notion-ui-panels/", "fidelity_confidence": "low" }
+    ]
+  },
+
+  "patterns_exemplified": ["CP-1 dollar-anchored headline", "CP-2 hedged number", "CP-6 CTA-as-objection-handler", "DP-6 real product UI screenshots", "DP-4 3-color palette", "DP-13 centered editorial poster"],
+
+  "prompt_writer_training_notes": "Ad is 85% typography — always Track B. Key move: the three-line headline needs a specific line_height (0.95) and letter_spacing (-0.02em) to match Notion's visual weight; without these, default sans falls apart. Mascot row is hard for image gen — composite from brand kit unless verified. Off-white (#F7F7F5) is deliberately warmer than pure white — reads as editorial, not clinical."
+}

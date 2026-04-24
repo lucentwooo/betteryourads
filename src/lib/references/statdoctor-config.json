@@ -1,0 +1,55 @@
+{
+  "campaignName": "StatDoctor Locum Doctor Acquisition",
+  "productType": "app",
+  "businessCategory": "healthcare-marketplace",
+  "businessDescription": "Two-sided marketplace connecting locum doctors directly with hospitals and healthcare facilities. Anti-agency positioning.",
+  "brandResearch": {
+    "source": "App Store metadata + website analysis (2026-04-09); primary hex re-sampled from logo_blue.png on 2026-04-14",
+    "websiteUrl": "https://statdoctor.app",
+    "appStoreUrl": "https://apps.apple.com/au/app/statdoctor/id6452677138",
+    "designAgency": "Humbl Design (humbldesign.io/work/statdoctor)"
+  },
+  "brandColors": {
+    "primary": "#033EFF",
+    "primaryDescription": "Electric royal blue, sampled directly from the StatDoctor logomark (rgb 3,62,255). This is the TRUE brand color — not muted navy. Saturated, confident, modern healthtech.",
+    "primaryLegacyIncorrect": "#284EA7 (do NOT use — this was a muted guess used in the 2026-04-13 run and was off-brand)",
+    "accent": "#3D6BFF",
+    "accentDescription": "Lighter brand blue for italic emphasis, glow blobs, secondary accents",
+    "lightCanvas": "#EEF2FF",
+    "lightCanvasDescription": "Cool off-white canvas tuned for cream/editorial layouts against the primary blue",
+    "textDark": "#0A1A5C",
+    "textDarkDescription": "Deep brand-tinted navy for headlines on light canvas",
+    "textOnDark": "#FDFDFE",
+    "textOnLight": "#0A1A5C",
+    "background": "#ffffff",
+    "coralAccent": "#FF6B6B",
+    "coralAccentDescription": "Use sparingly for strikethrough/pain markers only. Watch for clash against saturated #033EFF — swap to white if it fights the hero blue."
+  },
+  "typography": {
+    "primary": "Montserrat",
+    "primaryWeights": "100-900",
+    "primaryDescription": "Clean geometric sans-serif, modern professional",
+    "secondary": "Varela Round",
+    "secondaryDescription": "Friendly rounded sans-serif, softer approachable feel"
+  },
+  "logoDescription": "StatDoctor wordmark, referenced as statdoc_logo.svg. Blue on white. Clean modern typography. NOTE: AI cannot perfectly replicate - for production, composite real logo asset.",
+  "creativeDirection": {
+    "feel": "Modern healthtech, professional but approachable. Like a doctor-built tech product. NOT generic SaaS. NOT clinical/sterile. NOT startup-purple.",
+    "colorUsage": "Electric royal blue #033EFF as primary brand anchor (sampled from actual logo). White for text on dark. Cool off-white (#EEF2FF) for light canvases. Never use muted navy #284EA7 (old wrong guess), and never use indigo/purple/violet.",
+    "visualCues": [
+      "Medical/healthcare context without being clinical or stock-photo-y",
+      "Clean, modern app UI as hero visual",
+      "Professional but warm - these are doctors, not enterprise buyers",
+      "Trust and authority through blue tones",
+      "Australian healthcare setting context"
+    ],
+    "avoid": [
+      "Indigo/purple/violet colors (looks like SaaS, not healthcare)",
+      "Dark navy backgrounds unless specifically for problem-aware drama",
+      "Generic tech startup aesthetics",
+      "Stock stethoscope/hospital corridor imagery",
+      "Overly corporate or cold design"
+    ]
+  },
+  "outputDir": "./output"
+}

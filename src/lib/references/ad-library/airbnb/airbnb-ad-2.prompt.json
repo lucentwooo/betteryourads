@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "airbnb-ad-2",
+  "brand": "Airbnb",
+  "source_image": "./airbnb-ad-2.jpg",
+  "awareness_stage": "Solution Aware",
+  "register": "Luxury DTC / Premium App",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Three photorealistic iPhone mockups arrayed at the bottom must be image-generated (device rendering + crisp UI content is Nano Banana's strong suit). Headline 'Over 2 million / 5-star ratings', twin Editors' Choice laurel badges, and Airbnb logo are typography/graphic elements that composite cleanly. Track B recommended: generate the phone array + cream canvas + pink logo, overlay headline + badges.",
+    "concept_one_liner": "Triple-phone product array with headline + double Editors' Choice endorsement — platform credibility stack."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake including headline and Editors' Choice laurels.",
+    "nano_banana_json": {
+      "scene": "Editorial app-marketing composition: warm cream canvas, Airbnb pink rounded-square app icon top-center, two-line ExtraBold black headline below, twin Editors' Choice laurel badges in a row, and three iPhone mockups arrayed in a bottom strip (center phone slightly taller, flanking phones cropped at edges).",
+      "environment": { "canvas_background": "#F2ECE3 warm cream" },
+      "camera": { "angle": "flat graphic top-section, photorealistic 3D phones bottom" },
+      "lighting": { "style": "soft studio for phones, flat for graphic elements" },
+      "color_palette": [
+        { "hex": "#F2ECE3", "role": "cream canvas", "coverage_pct": 40 },
+        { "hex": "#FF5A5F", "role": "Airbnb Rausch pink app icon + logo accent", "coverage_pct": 3 },
+        { "hex": "#000000", "role": "primary typography", "coverage_pct": 12 },
+        { "hex": "#1A1A1A", "role": "phone bodies", "coverage_pct": 8 },
+        { "hex": "#FFFFFF", "role": "phone screens / card backgrounds", "coverage_pct": 25 },
+        { "hex": "#E8B6B6", "role": "listing photo coral tones", "coverage_pct": 7 },
+        { "hex": "#D97450", "role": "Experiences cooking class/Coyoacán warm tones", "coverage_pct": 5 }
+      ],
+      "composition": {
+        "layout_archetype": "editorial poster with triple-phone product array",
+        "vertical_zones": [
+          "Top 12%: Airbnb rounded-square app icon (Rausch pink with white Bélo logo glyph), centered",
+          "Top 15-32%: two-line ExtraBold black headline 'Over 2 million / 5-star ratings'",
+          "Center 34-42%: twin Editors' Choice laurel badges, side-by-side, thin black laurel leaves + italic 'Editors' Choice' text",
+          "Bottom 45-100%: three iPhone mockups (left: Experiences detail; center: Home screen search; right: Trip detail). Center phone slightly taller, flanks cropped."
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Over 2 million\n5-star ratings", "font": "Airbnb house ExtraBold sans (Circular)", "size_relative": "90px", "color": "#000000", "alignment": "center", "line_height": "1.02" },
+        { "role": "editors_choice_badges", "count": 2, "treatment": "each badge: two thin black laurel branch outlines flanking italic text 'Editors' Choice' in small caps or sentence case serif", "font": "Editorial serif italic", "size_relative": "22px", "color": "#000000" }
+      ],
+      "phone_array_content": {
+        "left_phone": "Airbnb Experiences page — 'Paris · Cooking' crumb top, large listing photo of a smiling young person in an apron in a kitchen environment, text overlay '...pastries with an...tive French bakery...'",
+        "center_phone": "Airbnb Homes home screen — status bar 9:41, white 'Start your search' search bar with magnifier icon, three tabs below (Homes with house icon selected, Experiences with NEW badge, Services with NEW badge), then 'Continue searching for homes in Mexico City / May 22 — 25 · 3 guests', then 'Recently viewed homes' header with grid of 4 square listing thumbnails below",
+        "right_phone": "Airbnb Trips detail — 'Trips / Los Angeles' header, large listing photo of an interior with pendant orange lamps and dining chairs, below 'Bungalow in Los Ang... / May 22 — 26 · Hosted by Erinn / Los Angeles, California, United States'"
+      },
+      "negative_prompt": ["no drop shadows on text", "no gradient mesh", "no photorealistic text overlays", "no emoji", "no blurred phone UI — all three phones must be crisp and legible", "no orphan badges (the twin Editors' Choice badges must sit on same baseline)"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate cream canvas + Airbnb app icon + empty space for headline + twin laurel frame shapes (without inner text) + three phones with full UI. Headline and Editors' Choice text composited in post.",
+    "nano_banana_json": {
+      "scene": "Warm cream (#F2ECE3) canvas 1080x1080. Top 12%: centered Airbnb rounded-square app icon (pink Rausch fill, white Bélo symbol inside). Center 34-42%: two thin black laurel leaf outline pairs mirrored around a vertical divider, framing empty negative space (no text). Bottom 55%: three iPhone mockups arrayed horizontally, center phone slightly taller than flanking phones (which are cropped at outer edges). Each phone shows a different Airbnb app screen (Experiences, Home, Trip — described below). Headline zone and laurel interior zones left blank.",
+      "camera": { "style": "photorealistic phone rendering, flat graphic for canvas" },
+      "lighting": { "style": "clean soft studio for phones" },
+      "color_palette": [
+        { "hex": "#F2ECE3", "role": "canvas" },
+        { "hex": "#FF5A5F", "role": "app icon" },
+        { "hex": "#000000", "role": "laurel strokes + phone bodies" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [10, 90], "y": [15, 32] } },
+          { "role": "editors_choice_left", "bbox_pct": { "x": [20, 40], "y": [34, 42] } },
+          { "role": "editors_choice_right", "bbox_pct": { "x": [60, 80], "y": [34, 42] } }
+        ]
+      },
+      "phone_array_content": "SAME as Track A (all phone UI content baked into the generated image)",
+      "negative_prompt": ["no headline text", "no text inside laurel badges", "no Airbnb logo type outside of the rounded-square app icon"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "Over 2 million\n5-star ratings", "font_family": "Circular / Airbnb Cereal ExtraBold", "weight": "800", "size_px": 90, "color_hex": "#000000", "position_bbox_pct": { "x": [10, 90], "y": [15, 32] }, "alignment": "center", "line_height": 1.02 },
+        { "role": "editors_choice_left_text", "content": "Editors' Choice", "font_family": "Editorial serif italic", "size_px": 22, "color_hex": "#000000", "position_bbox_pct": { "x": [20, 40], "y": [36, 40] }, "alignment": "center", "style": "italic" },
+        { "role": "editors_choice_right_text", "content": "Editors' Choice", "font_family": "Editorial serif italic", "size_px": 22, "color_hex": "#000000", "position_bbox_pct": { "x": [60, 80], "y": [36, 40] }, "alignment": "center", "style": "italic" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Airbnb app icon (rounded square with Bélo symbol)", "prompt_language_for_image_gen": "Rounded-square app icon (~22% corner radius), solid Airbnb Rausch pink-red fill (#FF5A5F), containing the white Bélo symbol (a stylized loop/heart shape), centered, no shadows.", "fallback_composite_source": "brand-kit/airbnb-app-icon.svg", "fidelity_confidence": "medium" },
+      { "name": "Airbnb app UI screens (Experiences, Home, Trip)", "prompt_language_for_image_gen": "Three distinct Airbnb iOS screens — see phone_array_content spec. Each crisp, legible at 360px phone width, authentic Airbnb visual language.", "fallback_composite_source": "brand-kit/airbnb-ui/*.png", "fidelity_confidence": "medium — complex UI elements may need composite" }
+    ]
+  },
+
+  "patterns_exemplified": ["CP-1 dollar-sized anchor ('Over 2 million')", "CP-2 hedged number", "DP-11 cream canvas consistency across campaign", "A2 multi-phone product array"],
+
+  "prompt_writer_training_notes": "Twin-badge laurel pattern is unusual — must specify 'two thin black laurel leaf outlines mirrored around a vertical divider' or image gen produces one large laurel. App icon needs explicit 'rounded-square' (not circle). Phone array with center-phone-taller is a specific layout choice; 'stage' arrangement phrasing helps. Cream #F2ECE3 is the campaign consistency hex — same as airbnb-ad-3."
+}

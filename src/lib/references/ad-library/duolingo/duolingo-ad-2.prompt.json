@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "duolingo-ad-2",
+  "brand": "Duolingo",
+  "source_image": "./duolingo-ad-2.jpg",
+  "awareness_stage": "Problem Aware (international / ESL)",
+  "register": "Youth / Minimalist Consumer",
+
+  "creative_direction": {
+    "approach": "typography-heavy",
+    "reasoning": "Extreme minimalism — white canvas, 2-line lowercase green headline, 'duolingo' signature, small Duo mascot at bottom. Typography IS the ad. Duo mascot is the only image-gen element; everything else is type and negative space. Track B: generate white canvas + small standing Duo at bottom; overlay headline + wordmark in post.",
+    "concept_one_liner": "Radical simplicity for ESL audiences — three words in Duolingo green on white, tiny Duo at bottom."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake.",
+    "nano_banana_json": {
+      "scene": "Pure white canvas with a two-line lowercase ExtraBold rounded sans headline 'improve / your english' in Duolingo green, the word 'duolingo' below in a muted gray-green slightly smaller, and Duo the owl mascot standing small at the bottom center with a subtle gray oval shadow.",
+      "environment": { "canvas_background": "#FFFFFF pure white" },
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat illustration render" },
+      "color_palette": [
+        { "hex": "#FFFFFF", "role": "canvas", "coverage_pct": 78 },
+        { "hex": "#58CC02", "role": "headline Duolingo green", "coverage_pct": 10 },
+        { "hex": "#89B24B", "role": "duolingo wordmark muted green", "coverage_pct": 3 },
+        { "hex": "#58CC02", "role": "Duo owl body green", "coverage_pct": 6 },
+        { "hex": "#FFA916", "role": "Duo beak/feet", "coverage_pct": 2 },
+        { "hex": "#E0E0E0", "role": "tiny gray oval shadow under Duo", "coverage_pct": 1 }
+      ],
+      "composition": {
+        "layout_archetype": "centered vertical stack with heavy negative space",
+        "vertical_zones": [
+          "Top 12-30%: two-line headline 'improve / your english' lowercase, centered",
+          "Middle 38-48%: 'duolingo' centered, smaller, muted green",
+          "Bottom 60-85%: Duo owl mascot standing, small, centered, with tiny gray oval shadow beneath",
+          "Approximately 60% of canvas is empty white space"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "improve\nyour english", "font": "Duolingo Feather Bold (rounded geometric ExtraBold sans)", "size_relative": "120px", "color": "#58CC02", "alignment": "center", "case": "lowercase", "line_height": "1.0", "notes": "Lowercase is load-bearing — audience signal for ESL" },
+        { "role": "wordmark", "content": "duolingo", "font": "Duolingo Feather Bold (muted weight)", "size_relative": "54px", "color": "#89B24B", "alignment": "center", "case": "lowercase" }
+      ],
+      "duo_mascot_spec": "Full body Duo standing, ~260px tall, green body, big white eyes, orange beak and feet, slightly tilted pose (right foot forward, head slightly turned right as if curious), tiny subtle gray oval shadow under feet (20% opacity).",
+      "negative_prompt": ["no capital letters in headline or wordmark", "no drop shadows on type", "no other text elements", "no background color or pattern", "no gradient", "no generic cartoon owl"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate only the white canvas + small standing Duo at bottom. All text overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Pure white 1080x1080 canvas. Duo the owl mascot (bright green body, big white eyes, orange triangular beak and feet, flat illustration in Duolingo's house style) standing small (~260px tall) in the bottom-center area (approximately y:65-90%), with a very subtle small gray oval shadow (20% opacity) under his feet. Rest of canvas is empty white space.",
+      "camera": { "style": "flat illustration" },
+      "color_palette": [
+        { "hex": "#FFFFFF", "role": "canvas" },
+        { "hex": "#58CC02", "role": "Duo body" },
+        { "hex": "#FFA916", "role": "Duo beak/feet" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [5, 95], "y": [12, 30] } },
+          { "role": "wordmark", "bbox_pct": { "x": [30, 70], "y": [38, 48] } }
+        ]
+      },
+      "negative_prompt": ["no text anywhere in canvas", "no 'improve your english' headline", "no 'duolingo' wordmark", "no capital letters", "canvas outside of Duo must be blank white"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "improve\nyour english", "font_family": "Duolingo Feather Bold / Nunito Rounded ExtraBold", "weight": "800", "size_px": 120, "color_hex": "#58CC02", "case": "lowercase", "position_bbox_pct": { "x": [5, 95], "y": [12, 30] }, "alignment": "center", "line_height": 1.0 },
+        { "role": "wordmark", "content": "duolingo", "font_family": "Duolingo Feather Bold", "weight": "700", "size_px": 54, "color_hex": "#89B24B", "case": "lowercase", "position_bbox_pct": { "x": [30, 70], "y": [38, 48] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Duo the owl mascot (standing full-body)", "prompt_language_for_image_gen": "Full-body cartoon owl standing: bright green (#58CC02) oval body, big white eyes with black pupils, small orange (#FFA916) triangular beak, tiny orange feet visible, slight head tilt, flat illustration in Duolingo's house style. NO drop shadow except subtle gray oval under feet.", "fallback_composite_source": "brand-kit/duolingo/duo-standing.svg", "fidelity_confidence": "low — composite preferred" }
+    ]
+  },
+
+  "patterns_exemplified": ["A8 radical simplicity for ESL", "DP-8 negative space >60%", "B4 (inverse) two-weight single-color palette", "DP-1 proprietary mascot"],
+
+  "prompt_writer_training_notes": "Lowercase is non-negotiable for this ad family — explicitly specify 'lowercase' in text spec or image gen auto-capitalizes. Green hierarchy (#58CC02 saturated for headline vs #89B24B muted for wordmark) creates hierarchy through color, not size difference — rare move. White canvas must be pure #FFFFFF; image gen often drifts to warm off-white which breaks the register. Duo standing pose ~260px at 1080 canvas = small. Explicit size needed to prevent oversize mascot."
+}

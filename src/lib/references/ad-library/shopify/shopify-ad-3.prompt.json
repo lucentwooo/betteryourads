@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "shopify-ad-3",
+  "brand": "Shopify",
+  "source_image": "./shopify-ad-3.jpg",
+  "awareness_stage": "Problem Aware",
+  "register": "Creator / Maker Lifestyle",
+
+  "creative_direction": {
+    "approach": "imagery-heavy",
+    "reasoning": "Four-corner peripheral collage of passion-business archetypes around a clean center text/CTA block. The four photos must feel like candid creator moments. Image-gen produces the 4-tile peripheral collage; center block (logo + headline + outline CTA) composites in post.",
+    "concept_one_liner": "Four passion-business photographs frame a centered 'Turn your passion into your business' headline with soft outline CTA."
+  },
+
+  "canvas": { "aspect_ratio": "9:16", "dimensions_px": "1080x1920", "placement": "Reels/Stories vertical" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 off-white editorial canvas with four photographs floating at the corners (each tilted at slight ±3-5° angles, rounded corners, subtle drop shadow) framing a clean center column containing the Shopify logo, a two-line sentence-case headline, and an outline-style pill CTA button.",
+      "environment": { "canvas_background": "#F5F5F5 light warm off-white" },
+      "camera": { "style": "studio/natural photography for tiles, flat for center" },
+      "lighting": { "style": "natural daylight for each photo tile, consistent across tiles" },
+      "color_palette": [
+        { "hex": "#F5F5F5", "role": "canvas off-white", "coverage_pct": 35 },
+        { "hex": "#1A1A1A", "role": "typography + CTA outline", "coverage_pct": 8 },
+        { "hex": "#7AB55C", "role": "Shopify green logo", "coverage_pct": 2 },
+        { "hex": "#B8A99A", "role": "skincare stand beige + warm wood tones in tiles", "coverage_pct": 15 },
+        { "hex": "#5A7A4D", "role": "matcha greens", "coverage_pct": 12 },
+        { "hex": "#D4A582", "role": "dog's golden fur + skin tones", "coverage_pct": 12 },
+        { "hex": "#6B8E5A", "role": "pottery workshop green apron tones", "coverage_pct": 8 }
+      ],
+      "composition": {
+        "layout_archetype": "peripheral 4-corner collage with centered text block",
+        "center_column": [
+          "Y:32-38%: Shopify shopping bag + wordmark centered",
+          "Y:39-48%: two-line sentence-case sans headline 'Turn your passion / into your business'",
+          "Y:49-55%: outline-only pill CTA button 'Start for free' (no fill, thin 1.5px black outline)"
+        ],
+        "corner_tiles": [
+          { "position": "top-left", "content": "product flat-lay: two pastel yellow/tan skincare tube/jar bottles on a pink marble stand, clean minimal DTC product shot, pink background inside the tile", "size_approx": "28% of canvas width", "rotation_deg": -3 },
+          { "position": "top-right", "content": "overhead close-up of a Black woman in dark apron pouring matcha/liquid into a ceramic cup — hand and apron visible, matcha ceremony vibe, warm wood surface", "size_approx": "35% of canvas width", "rotation_deg": 4 },
+          { "position": "bottom-left", "content": "hand feeding a treat to a golden retriever on a leash, person in blue pants crouching, pet-business/groomer scene", "size_approx": "33% of canvas width", "rotation_deg": -5 },
+          { "position": "bottom-right", "content": "hands whisking matcha in a black bowl with a bamboo whisk, overhead close-up, green matcha foam visible, wood floor beneath", "size_approx": "30% of canvas width", "rotation_deg": 3 }
+        ]
+      },
+      "style_directives": [
+        "Pinterest moodboard / lookbook energy",
+        "each tile has rounded corners (~16px radius) and a very subtle paper-drop shadow",
+        "tiles should feel candid / hands-at-work (not product packshots with faces smiling at camera)",
+        "photography consistent in natural daylight across tiles"
+      ],
+      "text_elements_in_image": [
+        { "role": "shopify_logo", "content": "shopping bag + 'shopify' wordmark", "font": "Shopify Sans", "size_relative": "38px", "color": "#7AB55C green + #1A1A1A text" },
+        { "role": "headline", "content": "Turn your passion\ninto your business", "font": "Shopify Sans Regular or Inter Regular (NOT bold)", "size_relative": "64px", "color": "#1A1A1A", "alignment": "center", "case": "sentence case", "line_height": "1.05" },
+        { "role": "cta_pill", "content": "Start for free", "font": "Sans Regular", "size_relative": "24px", "color": "#1A1A1A", "button_fill": "transparent", "button_stroke": "1.5px #1A1A1A", "button_radius": "fully pilled" }
+      ],
+      "negative_prompt": ["no filled solid-color CTA button (outline only)", "no drop shadows on text", "no gradient", "no faces smiling directly at camera (hands-at-work framing)", "no stock photo feel", "no rigid grid — tiles at natural angles", "no photo-blur or heavy filter on tiles", "no emoji", "no exclamation marks"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate off-white canvas + 4 corner photograph tiles. Center logo + headline + CTA composite in post.",
+    "nano_banana_json": {
+      "scene": "Vertical 9:16 off-white #F5F5F5 canvas with 4 photographic tiles at the corners (rounded 16px corners, subtle drop shadow, each tilted ±3-5°). Tiles as described in Track A corner_tiles. Center of canvas (approximately x:15-85%, y:30-56%) is empty off-white space reserved for overlaid text and logo.",
+      "camera": { "style": "natural daylight photography for tiles, flat for canvas" },
+      "color_palette": "see Track A",
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "shopify_logo", "bbox_pct": { "x": [35, 65], "y": [32, 38] } },
+          { "role": "headline", "bbox_pct": { "x": [15, 85], "y": [39, 48] } },
+          { "role": "cta_pill", "bbox_pct": { "x": [28, 72], "y": [49, 55] } }
+        ]
+      },
+      "negative_prompt": ["no center text", "no CTA button", "no Shopify logo (center zone blank)"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "shopify_logo", "source": "brand-kit/shopify-logo-green.svg", "size_px_height": 38, "position_bbox_pct": { "x": [35, 65], "y": [32, 38] }, "alignment": "center" },
+        { "role": "headline", "content": "Turn your passion\ninto your business", "font_family": "Shopify Sans / Inter Regular", "weight": "400", "size_px": 64, "color_hex": "#1A1A1A", "case": "sentence case", "position_bbox_pct": { "x": [15, 85], "y": [39, 48] }, "alignment": "center", "line_height": 1.05 },
+        { "role": "cta_pill", "content": "Start for free", "font_family": "Inter Regular", "weight": "400", "size_px": 24, "color_hex": "#1A1A1A", "pill_fill": "transparent", "pill_stroke_hex": "#1A1A1A", "pill_stroke_px": 1.5, "pill_radius_px": 999, "position_bbox_pct": { "x": [28, 72], "y": [49, 55] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Shopify logo (green + black wordmark)", "fallback_composite_source": "brand-kit/shopify-logo.svg", "fidelity_confidence": "medium" }
+    ]
+  },
+
+  "patterns_exemplified": ["DP-12 paper-cutout collage", "C4 cast the audience (passion archetype variant)", "A7 'Turn your X into Y' template", "CP-7-adj outline CTA for problem-aware stage", "B10 negative space in center"],
+
+  "prompt_writer_training_notes": "Outline CTA (transparent fill, thin black stroke) is a specific psychological choice for problem-aware — explicitly specify button_fill: transparent AND button_stroke. Default image gen will fill the button. Hands-at-work framing is a deliberate 'no face commitment' move — explicitly say 'hands and body in action, NO faces smiling at camera'. Four-tile peripheral layout needs explicit corner positions and tilt angles or tiles cluster randomly."
+}

@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "kalshi-ad-1",
+  "brand": "Kalshi",
+  "source_image": "./Kalshi-ad-1.jpg",
+  "awareness_stage": "Problem → Solution Aware",
+  "register": "Editorial Finance",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Editorial poster layout with a central line-art illustrated portrait (Rory McIlroy mid-celebration) that image-gen must generate in a specific style (New Yorker / FT editorial ink work). Typography is elaborate — includes terminal-style digital numbers ('6.6%') and a multi-line legal block. Track B recommended for typography accuracy; Track A can produce the illustration + canvas.",
+    "concept_one_liner": "News-cycle reactive editorial poster — cultural question as headline, illustrated golfer portrait, dollar-return asymmetry math at the bottom."
+  },
+
+  "canvas": { "aspect_ratio": "5:6", "dimensions_px": "1080x1296", "placement": "portrait editorial / Pinterest / Reels 4:5" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake including headline, stat, illustration, payoff line, legal.",
+    "nano_banana_json": {
+      "scene": "Editorial poster on an off-white cream background. Top: small green Kalshi wordmark + tagline. Below: a two-line black ExtraBold sans headline posing a question. Below that: a smaller sans line with the word '6.6%' in a stylized terminal/digital font. Center: a stylized ink-and-flat-color line-art illustration of a golfer (Rory McIlroy style — red hair under white cap, floral print shirt, cream pants) mid-fist-pump walking the fairway. Bottom: a single black sans line stating the dollar return. Below that: multi-line tiny legal copy.",
+      "environment": { "canvas_background": "#F3F0E9 warm cream off-white" },
+      "camera": { "angle": "flat editorial poster" },
+      "lighting": { "style": "flat graphic, no rendered shadows" },
+      "color_palette": [
+        { "hex": "#F3F0E9", "role": "cream canvas", "coverage_pct": 55 },
+        { "hex": "#000000", "role": "primary typography + line art", "coverage_pct": 25 },
+        { "hex": "#2E9E6B", "role": "Kalshi green logo", "coverage_pct": 2 },
+        { "hex": "#F5F0E4", "role": "illustration floral shirt background", "coverage_pct": 4 },
+        { "hex": "#F09040", "role": "golf club head / cap brim orange accent", "coverage_pct": 3 },
+        { "hex": "#8B4513", "role": "illustration hair red-brown", "coverage_pct": 3 },
+        { "hex": "#4A6D90", "role": "floral shirt color blocks", "coverage_pct": 4 }
+      ],
+      "composition": {
+        "layout_archetype": "centered editorial poster",
+        "vertical_zones": [
+          "Top 4-8%: 'Kalshi' green ExtraBold + 'Trade what's next.' black regular on same horizontal line, top-left aligned",
+          "Top 10-22%: two-line ExtraBold black headline 'Will Rory McIlroy win / the major in Augusta?'",
+          "Middle-upper 23-28%: 'Traders are giving him a [6.6%] chance.' with '6.6%' in a stylized terminal/bracket-edge monospace font",
+          "Center 30-78%: ink-and-flat-color illustration of a golfer mid-fist-pump walking fairway, approximately 55% canvas height",
+          "Bottom 82-88%: single line 'Turn your $100 into $1,516 if he wins.' in black sans",
+          "Bottom 90-97%: multi-line tiny gray legal disclaimer"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "kalshi_wordmark_line", "content": "Kalshi  Trade what's next.", "font": "Kalshi wordmark ExtraBold in green + regular sans in black", "size_relative": "28px", "color_per_part": [{ "substring": "Kalshi", "color": "#2E9E6B" }, { "substring": "Trade what's next.", "color": "#000000" }], "position": "top-left" },
+        { "role": "headline", "content": "Will Rory McIlroy win\nthe major in Augusta?", "font": "Editorial sans ExtraBold (Söhne / Inter ExtraBold)", "size_relative": "66px", "color": "#000000", "alignment": "left", "line_height": "1.02" },
+        { "role": "stat_line", "content": "Traders are giving him a 6.6% chance.", "font": "Sans Regular + stylized terminal/bracket monospace for '6.6%'", "size_relative": "34px", "color": "#000000", "alignment": "left", "stylization_note": "the '6.6%' characters have bracket-edged terminal-display letterforms (reference: Bloomberg terminal, vintage digital scoreboard)" },
+        { "role": "payoff_line", "content": "Turn your $100 into $1,516 if he wins.", "font": "Sans Regular", "size_relative": "34px", "color": "#000000", "alignment": "center" },
+        { "role": "legal", "content": "Restrictions and eligibility requirements apply. Event contract trading involves significant risk and is not appropriate for everyone. Please carefully consider if it's appropriate for you in light of your personal financial circumstances. Prices may not be live and are subject to change. See kalshi.com/regulatory for more information. Federally regulated event contract exchange. Users over the age of 18 are able to register and trade.", "font": "Sans Regular tiny", "size_relative": "10px", "color": "#6A6A6A", "alignment": "center", "line_height": "1.3" }
+      ],
+      "illustration_spec": {
+        "style": "Editorial line-art with flat color fills, reminiscent of New Yorker magazine illustrations or vintage sports zine — NOT photorealistic, NOT 3D, NOT a cartoon",
+        "subject": "Male golfer walking forward toward camera on a fairway, mid-stride, right arm bent in triumphant fist-pump, left hand holding a golf club by the grip at his side (club head visible near the ground with an orange accent cap)",
+        "wardrobe": "white/cream ballcap with orange brim accent; short-sleeve floral-print button-down shirt with muted multi-color pattern (cream background, small navy + orange + dusty-blue abstract florals); cream/tan chinos or pants; white golf shoes",
+        "hair_and_skin": "red-brown (#8B4513) curly hair under cap; pale skin with subtle red flush",
+        "pose_note": "facing camera, body angled slightly left, right foot mid-stride forward",
+        "rendering": "crisp black ink outlines (~2px), minimal shading, flat color blocks, no rendered depth or 3D shadow"
+      },
+      "negative_prompt": ["no photorealistic golfer", "no 3D render", "no cartoon/Pixar style", "no drop shadows on text", "no gradient", "no crowd or stadium background", "no tournament logos or sponsor branding", "no emoji", "no exclamation marks", "no stock illustration feel"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate cream canvas + golfer illustration only. All typography overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Warm cream (#F3F0E9) canvas at 5:6 aspect (1080x1296). Center 30-78% of canvas contains an editorial line-art and flat-color illustration of a male golfer — see illustration_spec in Track A. Rest of canvas is empty cream space reserved for overlaid text and brand mark.",
+      "camera": { "style": "flat editorial" },
+      "color_palette": [
+        { "hex": "#F3F0E9", "role": "canvas" },
+        { "hex": "#000000", "role": "illustration ink outlines" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "kalshi_wordmark_line", "bbox_pct": { "x": [4, 50], "y": [4, 8] } },
+          { "role": "headline", "bbox_pct": { "x": [4, 96], "y": [10, 22] } },
+          { "role": "stat_line", "bbox_pct": { "x": [4, 96], "y": [23, 28] } },
+          { "role": "payoff_line", "bbox_pct": { "x": [6, 94], "y": [82, 88] } },
+          { "role": "legal", "bbox_pct": { "x": [10, 90], "y": [90, 97] } }
+        ]
+      },
+      "negative_prompt": ["no text anywhere in canvas", "no Kalshi wordmark", "no headline", "no stat line", "no legal copy — all reserved zones must be empty cream space"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "kalshi_wordmark", "content": "Kalshi", "font_family": "Kalshi wordmark ExtraBold", "weight": "800", "size_px": 28, "color_hex": "#2E9E6B", "position_bbox_pct": { "x": [4, 15], "y": [4, 8] }, "alignment": "left" },
+        { "role": "tagline", "content": "Trade what's next.", "font_family": "Inter Regular", "weight": "400", "size_px": 28, "color_hex": "#000000", "position_bbox_pct": { "x": [15, 50], "y": [4, 8] }, "alignment": "left" },
+        { "role": "headline", "content": "Will Rory McIlroy win\nthe major in Augusta?", "font_family": "Söhne ExtraBold / Inter ExtraBold", "weight": "800", "size_px": 66, "color_hex": "#000000", "position_bbox_pct": { "x": [4, 96], "y": [10, 22] }, "alignment": "left", "line_height": 1.02 },
+        { "role": "stat_line", "content": "Traders are giving him a 6.6% chance.", "font_family": "Inter Regular (main) + custom terminal/monospace for '6.6%'", "weight": "400", "size_px": 34, "color_hex": "#000000", "position_bbox_pct": { "x": [4, 96], "y": [23, 28] }, "alignment": "left", "stylization_note": "'6.6%' rendered in a bracket-edge terminal/Bloomberg-style monospace type; rest of line in regular sans" },
+        { "role": "payoff_line", "content": "Turn your $100 into $1,516 if he wins.", "font_family": "Inter Regular", "weight": "400", "size_px": 34, "color_hex": "#000000", "position_bbox_pct": { "x": [6, 94], "y": [82, 88] }, "alignment": "center" },
+        { "role": "legal", "content": "Restrictions and eligibility requirements apply. Event contract trading involves significant risk and is not appropriate for everyone. Please carefully consider if it's appropriate for you in light of your personal financial circumstances. Prices may not be live and are subject to change. See kalshi.com/regulatory for more information. Federally regulated event contract exchange. Users over the age of 18 are able to register and trade.", "font_family": "Inter Regular", "weight": "400", "size_px": 10, "color_hex": "#6A6A6A", "position_bbox_pct": { "x": [10, 90], "y": [90, 97] }, "alignment": "center", "line_height": 1.3 }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Kalshi wordmark", "prompt_language_for_image_gen": "'Kalshi' in editorial ExtraBold sans-serif, saturated forest green (#2E9E6B).", "fallback_composite_source": "brand-kit/kalshi-wordmark.svg", "fidelity_confidence": "medium" },
+      { "name": "Editorial golfer illustration", "prompt_language_for_image_gen": "See illustration_spec — New Yorker / FT editorial ink-and-flat-color style. Critical: NOT photorealistic.", "fallback_composite_source": "custom illustration commission / stock editorial library", "fidelity_confidence": "medium — style is distinctive, iterate on 'editorial ink illustration' keyword" }
+    ]
+  },
+
+  "patterns_exemplified": ["A6 cultural question as headline", "C5 news-cycle reactive templating", "C8 asymmetric math (probability + payoff)", "DP-1 proprietary illustration", "DP-2 off-white cream canvas", "B7 logo-tiny confidence", "editorial finance register hallmarks"],
+
+  "prompt_writer_training_notes": "Illustration style description is the MOST important variable — 'editorial line-art with flat color fills, reminiscent of New Yorker magazine illustrations' performs much better than 'illustrated golfer'. Avoid the word 'cartoon' or 'realistic' — both wrong register. Terminal-style '6.6%' is the single micro-flourish that signals finance literacy — if image-gen can't do it, composite that substring separately with a terminal font. The 5:6 aspect ratio is intentional for editorial feel vs 1:1. Legal copy is long — plan for at least 5 lines of tiny gray sans."
+}

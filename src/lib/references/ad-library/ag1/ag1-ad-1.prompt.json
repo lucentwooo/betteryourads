@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "ag1-ad-1",
+  "brand": "AG1",
+  "source_image": "./ag1-ad-1.jpg",
+  "awareness_stage": "Product / Most Aware",
+  "register": "Luxury DTC / Editorial Wellness",
+
+  "creative_direction": {
+    "approach": "imagery-heavy",
+    "reasoning": "The ad is a studio product-grid photograph with a serif editorial headline on top. The 6 products (scoop, drops, 3-pack sticks, shaker bottle, pouch, canister) must be photographed/rendered with consistent lighting, scale, and AG1's signature forest-green palette — image-gen must handle this as a cohesive composition. Track A is feasible for the visual, but headline + price labels need Track B compositing for accuracy.",
+    "concept_one_liner": "Apothecary-style product grid with strikethrough-to-free pricing, serif editorial headline — reframes the $79 subscription as a $72 welcome kit gift."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Studio-lit product grid with typography baked in.",
+    "nano_banana_json": {
+      "scene": "Editorial studio product photograph on a warm cream background: six AG1 products arranged in a strict 3-column 2-row grid. Serif editorial black headline in the top 20% of canvas. Under each product, a small label shows the struck-through retail price followed by 'Free' (or '30 Day Supply of AG1' for the center hero).",
+      "subject": {
+        "description": "Six wellness products in AG1's signature dark forest green palette, shot flat-lay against cream.",
+        "products_top_row": [
+          { "position": "top-left", "item": "a dark green measuring scoop with powder inside, slightly angled", "label": "Free" },
+          { "position": "top-center", "item": "a small amber-brown glass dropper bottle with 'AG1' label (vitamin D drops)", "label": "$29 (struck through) Free" },
+          { "position": "top-right", "item": "a rectangular stack of 3 AG1-branded daily stick packets in forest green, labeled 'AG1 / AG1 / AG1'", "label": "$15 (struck through) Free" }
+        ],
+        "products_bottom_row": [
+          { "position": "bottom-left", "item": "a clear shaker bottle with black screw cap, filled with dark green liquid, 'AG1' in white text on the side", "label": "$14 (struck through) Free" },
+          { "position": "bottom-center", "item": "a large forest-green stand-up pouch labeled 'AG1 NEXT GEN — Daily Foundational Nutrition' (hero of the grid)", "label": "30 Day Supply of AG1" },
+          { "position": "bottom-right", "item": "a tall forest-green tin canister with 'AG' embossed subtly", "label": "$14 (struck through) Free" }
+        ]
+      },
+      "environment": { "canvas_background": "#EEEAE0 warm cream/stone, flat, no texture", "props": [], "lighting_surface": "soft even studio" },
+      "camera": { "lens_mm": 85, "aperture": "f/5.6", "angle": "top-down flat-lay (but each product shot from slight 20-30° front angle to show dimension)", "distance": "product-scale", "framing": "1:1" },
+      "lighting": { "key_light": "soft large softbox from upper front", "fill": "bounce from front to kill under-shadow", "mood": "apothecary / luxury wellness", "shadows": "very soft subtle shadow under each product, grounding only, 20% opacity" },
+      "color_palette": [
+        { "hex": "#EEEAE0", "role": "cream canvas", "coverage_pct": 50 },
+        { "hex": "#1E3A34", "role": "AG1 forest green on products", "coverage_pct": 25 },
+        { "hex": "#F5F3EE", "role": "shaker bottle body / product highlights", "coverage_pct": 8 },
+        { "hex": "#000000", "role": "headline + labels", "coverage_pct": 8 },
+        { "hex": "#A08B60", "role": "amber dropper bottle", "coverage_pct": 3 }
+      ],
+      "composition": {
+        "layout_archetype": "apothecary product grid",
+        "grid": "3 columns × 2 rows, equal spacing, center bottom product slightly larger as hero",
+        "negative_space_pct": 25
+      },
+      "style_directives": [
+        "editorial apothecary / wellness lookbook (reference: Aesop, Le Labo, Glossier)",
+        "all products rendered at normalized visual size (not actual relative scale)",
+        "consistent lighting direction across all products"
+      ],
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Get Your $72 Free\nWelcome Kit Now**", "font": "Editorial serif (Canela / Tiempos / Söhne Breit — elegant high-contrast serif)", "size_relative": "72px", "color": "#000000", "alignment": "center", "line_height": "1.08", "notes": "Serif is non-negotiable; sans breaks the luxury register" },
+        { "role": "product_labels", "treatment": "below each product — struck-through previous price in smaller gray sans, then the word 'Free' in slightly larger black sans. Center hero says '30 Day Supply of AG1' in black sans.", "font": "Clean sans Medium", "size_relative": "24px" },
+        { "role": "legal", "content": "** Offer Valid For New Subscribers Only", "font": "Sans Regular", "size_relative": "16px", "color": "#1E3A34 (dark green, matches palette)", "alignment": "center", "position": "bottom center" }
+      ],
+      "negative_prompt": ["no saturated red discount badges", "no 'SAVE' starburst", "no gradient mesh", "no glassmorphism", "no plastic-y photorealism — must look editorial-magazine grade", "no drop shadows on text", "no emoji", "no exclamation marks", "no stock photo feel"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate the 6-product studio grid on cream. Text (headline, labels, legal) composited in post.",
+    "nano_banana_json": {
+      "scene": "Same 6-product AG1 grid composition as Track A — cream canvas, 3-column 2-row, editorial studio lighting — but WITH NO HEADLINE and NO PRICE LABELS. Only the product photography.",
+      "camera": { "lens_mm": 85, "aperture": "f/5.6", "angle": "flat-lay with slight dimensional angle per product" },
+      "lighting": { "style": "soft large softbox, very subtle grounding shadows" },
+      "color_palette": [
+        { "hex": "#EEEAE0", "role": "cream canvas" },
+        { "hex": "#1E3A34", "role": "AG1 forest green" },
+        { "hex": "#F5F3EE", "role": "shaker bottle / highlights" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [10, 90], "y": [5, 22] } },
+          { "role": "price_labels", "bbox_pct": "one below each of the 6 products" },
+          { "role": "legal", "bbox_pct": { "x": [20, 80], "y": [95, 99] } }
+        ]
+      },
+      "negative_prompt": ["no baked-in text", "no headline", "no price labels under products", "no legal copy"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "Get Your $72 Free\nWelcome Kit Now**", "font_family": "Canela / Tiempos / editorial high-contrast serif", "weight": "500", "size_px": 72, "color_hex": "#000000", "position_bbox_pct": { "x": [10, 90], "y": [5, 22] }, "alignment": "center", "line_height": 1.08 },
+        { "role": "product_label_01", "content": "Free", "font_family": "Clean sans Medium", "size_px": 24, "color_hex": "#000000", "position": "below top-left scoop" },
+        { "role": "product_label_02", "content": "~~$29~~ Free", "style": "strikethrough on '$29' in gray, 'Free' in black", "font_family": "Clean sans Medium", "size_px": 24, "position": "below top-center drops" },
+        { "role": "product_label_03", "content": "~~$15~~ Free", "style": "same", "size_px": 24, "position": "below top-right stick pack" },
+        { "role": "product_label_04", "content": "~~$14~~ Free", "style": "same", "size_px": 24, "position": "below bottom-left shaker" },
+        { "role": "product_label_05", "content": "30 Day Supply of AG1", "font_family": "Clean sans Medium", "size_px": 26, "color_hex": "#000000", "position": "below center pouch (hero)" },
+        { "role": "product_label_06", "content": "~~$14~~ Free", "size_px": 24, "position": "below bottom-right canister" },
+        { "role": "legal", "content": "** Offer Valid For New Subscribers Only", "font_family": "Sans Regular", "size_px": 16, "color_hex": "#1E3A34", "position_bbox_pct": { "x": [20, 80], "y": [95, 99] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "AG1 product line (6 SKUs)", "prompt_language_for_image_gen": "Six AG1 products in signature dark forest-green (#1E3A34) branding: dark green measuring scoop, small amber glass dropper bottle with 'AG1' white label, stack of 3 forest-green daily stick packets with 'AG1' white text, clear shaker bottle with black cap and 'AG1' in white on side filled with dark green liquid, large forest-green stand-up pouch labeled 'AG1 NEXT GEN Daily Foundational Nutrition', tall forest-green tin canister with subtle embossed 'AG' lettering. All products consistent in lighting and shot style.", "fallback_composite_source": "brand-kit/ag1-products/*.png", "fidelity_confidence": "medium — product rendering is image-gen's strong suit but brand labels/text may need composite" }
+    ]
+  },
+
+  "patterns_exemplified": ["DP-2 editorial serif on cream", "CP-1 dollar anchor ($72)", "B2 luxury DTC register", "DP-4 3-color palette", "DP-15 single-color brand product family"],
+
+  "prompt_writer_training_notes": "Serif headline is load-bearing for luxury-DTC register — must name the typeface family (Canela/Tiempos) or request 'editorial high-contrast serif'. Do NOT say 'elegant font' (vague). Cream #EEEAE0 is warmer than pure white and warmer than off-white — exact hex matters. Product lighting spec should say 'apothecary / luxury wellness' — image gen recognizes these references. Strikethrough pricing is easier to composite than bake — Track B strongly preferred."
+}

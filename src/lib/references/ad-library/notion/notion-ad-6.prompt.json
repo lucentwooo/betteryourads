@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "notion-ad-6",
+  "brand": "Notion",
+  "source_image": "./notion-ad-6.jpg",
+  "awareness_stage": "Solution → Product Aware",
+  "register": "SaaS/B2B Editorial (enterprise-leaning)",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Same card-in-frame layout as notion-ad-4 but with cool-blue canvas instead of warm yellow — the layout is a design-system template, color is the audience segmentation variable. Track B recommended for same reason as ad-4: surgical word-coloring on $12,000 and 'free' requires post-compositing.",
+    "concept_one_liner": "Blue-canvas variant of the Notion card-in-frame template, tuned for enterprise/B2B audiences."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake.",
+    "nano_banana_json": {
+      "scene": "Light blue canvas with a white rounded-rectangle card floating center, mimicking a Notion web page, with two ghosted offset cards behind it for depth. Card has Notion logo top-left, blue Get Started Free pill top-right, two-line Title Case headline, dollar-anchored offer line with color-highlighted words, AI Access pill CTA, and three overlapping Notion UI screenshot panels in the bottom third.",
+      "environment": { "canvas_background": "#6BB8F0 soft cool blue (lighter than signature Notion blue — chosen to feel airy/calm rather than saturated)" },
+      "camera": { "angle": "flat graphic, top-down" },
+      "lighting": { "style": "flat render, no shadows" },
+      "color_palette": [
+        { "hex": "#6BB8F0", "role": "canvas blue", "coverage_pct": 30 },
+        { "hex": "#FFFFFF", "role": "card surface", "coverage_pct": 55 },
+        { "hex": "#000000", "role": "primary typography", "coverage_pct": 10 },
+        { "hex": "#2D7FF9", "role": "Get Started Free pill + $12,000 word", "coverage_pct": 3 },
+        { "hex": "#E84B3B", "role": "'free' accent", "coverage_pct": 1 },
+        { "hex": "#E6EFFF", "role": "AI Access pill fill", "coverage_pct": 2 }
+      ],
+      "composition": {
+        "layout_archetype": "card-in-frame",
+        "notes": "IDENTICAL LAYOUT TO notion-ad-4 EXCEPT canvas color is cool blue. All card contents, UI strip, typography, and CTAs unchanged.",
+        "vertical_zones": [
+          "Card top 15%: Notion logo left, Get Started Free blue pill right",
+          "Card center 25%: two-line Title Case ExtraBold headline 'Organize Everything. / Accomplish Anything.'",
+          "Card center 12%: offer line with surgical word-coloring",
+          "Card center 10%: AI Access pill CTA",
+          "Card bottom 33%: three overlapping Notion UI panels (Daily Report chart, Engineering Tasks table, Launch checklist kanban)"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Organize Everything.\nAccomplish Anything.", "font": "Geometric ExtraBold sans", "size_relative": "95px", "color": "#000000", "case": "Title Case", "line_height": "0.98" },
+        { "role": "offer_line", "content": "Get up to $12,000 of free Notion", "font": "Sans SemiBold", "size_relative": "44px", "color": "#000000", "color_overrides": [{ "substring": "$12,000", "color": "#2D7FF9" }, { "substring": "free", "color": "#E84B3B" }] },
+        { "role": "ai_access_pill", "content": "Free 3 Month Trial, Full AI Access ✦", "font": "Sans SemiBold", "size_relative": "36px", "color": "#000000", "button_fill": "#E6EFFF", "button_radius": "fully pilled" },
+        { "role": "top_cta_button", "content": "Get Started Free", "font": "Sans Medium", "size_relative": "22px", "color": "#FFFFFF", "button_fill": "#2D7FF9", "button_radius": "fully pilled" }
+      ],
+      "negative_prompt": ["no saturated navy — canvas must be soft airy blue", "no drop shadows on text", "no photorealism", "no emoji", "no exclamation marks"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Identical to notion-ad-4 Track B except canvas color swap. Generate blue canvas + white card + ghosted stack + product UI strip + top-right blue pill shell. Text overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Flat-lay graphic: white rounded-corner card on a soft cool blue #6BB8F0 canvas, with two ghosted offset card silhouettes behind implying a stack. Card contains: Notion N logo + wordmark top-left, an empty blue #2D7FF9 pill button top-right, and three overlapping Notion UI screenshot panels in bottom 33% (Daily Report line chart, Engineering Tasks database table, Launch checklist kanban). Middle 50% of card is reserved blank white space for overlaid text.",
+      "camera": { "angle": "flat graphic, top-down" },
+      "lighting": { "style": "flat render" },
+      "color_palette": [
+        { "hex": "#6BB8F0", "role": "canvas" },
+        { "hex": "#FFFFFF", "role": "card surface" },
+        { "hex": "#2D7FF9", "role": "top-right CTA pill fill" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [14, 86], "y": [24, 44] } },
+          { "role": "offer_line", "bbox_pct": { "x": [14, 86], "y": [45, 53] } },
+          { "role": "ai_access_pill", "bbox_pct": { "x": [22, 78], "y": [55, 64] } },
+          { "role": "top_cta_button_text", "bbox_pct": { "x": [70, 90], "y": [12, 18] } }
+        ]
+      },
+      "negative_prompt": ["no baked-in text anywhere in card except the Notion wordmark + logo top-left"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "top_cta_button_text", "content": "Get Started Free", "font_family": "Inter/Söhne Medium", "weight": "500", "size_px": 22, "color_hex": "#FFFFFF", "position_bbox_pct": { "x": [70, 90], "y": [12, 18] }, "alignment": "center" },
+        { "role": "headline", "content": "Organize Everything.\nAccomplish Anything.", "font_family": "Inter/Söhne ExtraBold", "weight": "800", "size_px": 95, "color_hex": "#000000", "case": "Title Case", "position_bbox_pct": { "x": [14, 86], "y": [24, 44] }, "alignment": "center", "line_height": 0.98 },
+        { "role": "offer_line", "content": "Get up to $12,000 of free Notion", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 44, "color_hex": "#000000", "color_overrides": [{ "substring": "$12,000", "color_hex": "#2D7FF9" }, { "substring": "free", "color_hex": "#E84B3B" }], "position_bbox_pct": { "x": [14, 86], "y": [45, 53] }, "alignment": "center" },
+        { "role": "ai_access_pill", "content": "Free 3 Month Trial, Full AI Access ✦", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 36, "color_hex": "#000000", "pill_fill_hex": "#E6EFFF", "pill_radius_px": 999, "position_bbox_pct": { "x": [22, 78], "y": [55, 64] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Notion N logo + wordmark", "fallback_composite_source": "brand-kit/notion-logo.svg", "fidelity_confidence": "medium" },
+      { "name": "Notion product UI panels (same as notion-ad-4)", "fallback_composite_source": "brand-kit/notion-ui-panels/", "fidelity_confidence": "low" }
+    ]
+  },
+
+  "patterns_exemplified": ["DP-3 card-in-frame", "DP-11 warm vs cool canvas segmentation", "CP-1 dollar anchor", "CP-7 dual CTA", "DP-5 surgical word-coloring", "DP-6 real UI screenshots"],
+
+  "prompt_writer_training_notes": "This ad + notion-ad-4 demonstrate the A/B color variant pattern — SAME LAYOUT, swap canvas color to target different audiences. When prompting: flag that these pair together and specify the canvas hex explicitly so image gen doesn't default to a generic blue. Avoid saturated navy (reads enterprise-stiff); the #6BB8F0 airy blue is deliberately soft."
+}

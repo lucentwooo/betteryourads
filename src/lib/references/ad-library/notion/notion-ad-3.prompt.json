@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "notion-ad-3",
+  "brand": "Notion",
+  "source_image": "./notion-ad-3.jpg",
+  "awareness_stage": "Solution Aware (Product Aware closer)",
+  "register": "SaaS/B2B Editorial with Youth warmth",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Typography is the hero (5-beat rhythmic headline + dollar anchor + black CTA pill), but the ad requires two distinctive visual elements: a hand-painted green highlighter marker behind 'Your way' and a bottom illustration of 3 people + a dog around an orange book. Both are hard to generate reliably — Track B mandatory, highlighter and illustration composited from brand kit for fidelity.",
+    "concept_one_liner": "Four-verb rhythmic headline ending on a hand-highlighted 'Your way', anchored by a line-art group illustration."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake including hand-highlighted Your way and bottom illustration.",
+    "nano_banana_json": {
+      "scene": "Saturated warm yellow canvas. Upper half is a three-line black ExtraBold sans headline with 'Your way' on the third line wrapped in a hand-painted grass-green highlighter rectangle. Below: 'Get up to $12,000 of free Notion' in smaller sans. Then a black pill CTA. Bottom 30%: hand-drawn line-art of 3 people + an orange book + a dog in Notion's house illustration style.",
+      "environment": { "canvas_background": "#FFD63A warm yellow" },
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat render" },
+      "color_palette": [
+        { "hex": "#FFD63A", "role": "canvas yellow", "coverage_pct": 55 },
+        { "hex": "#000000", "role": "primary typography + line art", "coverage_pct": 22 },
+        { "hex": "#8BC34A", "role": "grass-green highlighter behind 'Your way'", "coverage_pct": 3 },
+        { "hex": "#FF7F2B", "role": "orange book in illustration", "coverage_pct": 4 },
+        { "hex": "#FFFFFF", "role": "figures' skin highlights + dog body", "coverage_pct": 10 }
+      ],
+      "composition": {
+        "layout_archetype": "centered editorial poster with hand-drawn accent",
+        "vertical_zones": [
+          "Top 7%: Notion N logo + wordmark, small, centered",
+          "Top 14-45%: three-line ExtraBold headline, third line 'Your way' highlighted",
+          "Center 47-53%: 'Get up to $12,000 of free Notion' SemiBold sans",
+          "Center 55-63%: black CTA pill",
+          "Bottom 35%: line-art illustration of 3 people + orange book + dog"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline_lines_1_2", "content": "Dream it. Map it.\nBuild it. Share it.", "font": "Geometric ExtraBold sans", "size_relative": "110px", "color": "#000000", "alignment": "center", "line_height": "1.0" },
+        { "role": "headline_line_3", "content": "Your way.", "font": "Geometric ExtraBold sans", "size_relative": "110px", "color": "#000000", "alignment": "center", "highlight_treatment": "hand-painted grass-green (#8BC34A) rectangular brush stroke behind the text, imperfect edges, brush-mark visible, 70% opacity at edges" },
+        { "role": "offer_line", "content": "Get up to $12,000 of free Notion", "font": "Sans SemiBold", "size_relative": "40px", "color": "#000000", "color_overrides": [{ "substring": "$12,000", "style": "bolder weight" }, { "substring": "free", "style": "bolder weight" }] },
+        { "role": "cta_pill", "content": "Free 3 Month Trial with Full AI Access ✦", "font": "Sans SemiBold", "size_relative": "34px", "color": "#FFFFFF", "button_fill": "#1A1A1A", "button_radius": "fully pilled", "trailing_icon": "four-point sparkle" }
+      ],
+      "illustration_spec": {
+        "style": "Notion house line art, hand-drawn imperfect strokes, flat fills",
+        "content": "Three figures standing around a large open orange book held up by the middle figure. Left figure: woman with curly hair in patterned sweater, holding a magnifying glass. Center: man with short hair in white shirt holding book. Right: woman with curly black hair, arms at sides. In front/below: a small orange-brown dog lying down facing left. Thin 2px black strokes, flat color fills for clothing and hair.",
+        "position": "bottom 35%"
+      },
+      "negative_prompt": ["no drop shadows on text", "no gradient", "no photorealism", "no stock photography", "no emoji", "no exclamation marks", "highlighter must NOT look like a clean rectangle — must have painterly imperfect edges"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Yellow canvas + illustration + highlighter. All text overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Saturated warm yellow (#FFD63A) canvas 1080x1080. Small Notion N logo + wordmark top-center (7%). In the vertical band y:38-45% there is a hand-painted grass-green (#8BC34A) irregular horizontal rectangle brush stroke, approximately 380px wide centered horizontally, with painterly imperfect edges and slight opacity variation — this is a highlighter mark behind text that will be composited on top. Bottom 35% contains a Notion-house-style line-art illustration: 3 figures standing around an open orange book, with a small dog in front. Thin 2px black strokes on flat color fills.",
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat render" },
+      "color_palette": [
+        { "hex": "#FFD63A", "role": "canvas" },
+        { "hex": "#8BC34A", "role": "highlighter mark" },
+        { "hex": "#000000", "role": "line art strokes" },
+        { "hex": "#FF7F2B", "role": "book cover" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline_lines_1_2", "bbox_pct": { "x": [8, 92], "y": [14, 38] } },
+          { "role": "headline_line_3_over_highlighter", "bbox_pct": { "x": [30, 70], "y": [38, 48] } },
+          { "role": "offer_line", "bbox_pct": { "x": [10, 90], "y": [48, 54] } },
+          { "role": "cta_pill", "bbox_pct": { "x": [15, 85], "y": [55, 65] } }
+        ]
+      },
+      "negative_prompt": ["no text baked in", "no headline", "no body copy", "no CTA text — only visuals (canvas, highlighter mark, illustration)"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline_block", "content": "Dream it. Map it.\nBuild it. Share it.\nYour way.", "font_family": "Inter/Söhne ExtraBold", "weight": "800", "size_px": 110, "color_hex": "#000000", "position_bbox_pct": { "x": [8, 92], "y": [14, 48] }, "alignment": "center", "line_height": 1.0, "notes": "'Your way.' sits on top of the already-generated green highlighter mark in the background" },
+        { "role": "offer_line", "content": "Get up to $12,000 of free Notion", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 40, "color_hex": "#000000", "position_bbox_pct": { "x": [10, 90], "y": [48, 54] }, "alignment": "center" },
+        { "role": "cta_pill", "content": "Free 3 Month Trial with Full AI Access ✦", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 34, "color_hex": "#FFFFFF", "pill_fill_hex": "#1A1A1A", "pill_radius_px": 999, "position_bbox_pct": { "x": [15, 85], "y": [55, 65] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Notion N logo + wordmark", "fallback_composite_source": "brand-kit/notion-logo.svg", "fidelity_confidence": "medium" },
+      { "name": "Hand-painted green highlighter mark", "prompt_language_for_image_gen": "A grass-green (#8BC34A) rectangular brush stroke, ~380px wide, painterly imperfect edges with visible brush-mark texture, slight opacity drop at left and right ends (70%), like someone swept a wide highlighter across the canvas once.", "fallback_composite_source": "brand-kit/accents/green-highlighter.png", "fidelity_confidence": "low — image-gen tends to make clean rectangles; composite recommended" },
+      { "name": "Three-figures-around-an-orange-book illustration", "prompt_language_for_image_gen": "Notion house-style line art: 3 figures (left: woman w/ curly hair, patterned sweater, magnifying glass; center: man w/ short hair holding open orange book; right: woman w/ curly black hair) with a small orange-brown dog lying in front. Thin consistent 2px black strokes, flat color fills, imperfect organic edges. Book cover is saturated orange (#FF7F2B).", "fallback_composite_source": "brand-kit/notion-illustrations/group-book.svg", "fidelity_confidence": "medium" }
+    ]
+  },
+
+  "patterns_exemplified": ["CP-3 verb-rhythm parallelism (4-beat)", "DP-14 hand-painted accent on flat layout", "DP-9 warm canvas", "DP-1 proprietary illustration", "CP-1 dollar-anchored secondary line"],
+
+  "prompt_writer_training_notes": "Highlighter mark is the single creative flourish — ALWAYS call out 'painterly imperfect edges' and 'visible brush-mark texture' or image gen produces a flat rectangle. Yellow (#FFD63A) is audience-signal for creator/youth — never sub with pastel yellow. 4-beat verb rhythm in headline: each 'verb it.' must be preserved with periods."
+}

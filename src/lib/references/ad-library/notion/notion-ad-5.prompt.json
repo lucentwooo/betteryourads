@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "notion-ad-5",
+  "brand": "Notion",
+  "source_image": "./notion-ad-5.jpg",
+  "awareness_stage": "Solution → Product Aware",
+  "register": "SaaS/B2B Editorial with warmth",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Typography carries headline + subhead + CTA, and the ad's signature move is a visual equation: [Notion mascot circle] + [row of 5 integration logos in white circles]. Logos must be recognizable (Slack, GitHub, Google Drive, Jira, Teams) — composite from brand kit for accuracy. Track B: generate yellow canvas + black frame + the mascot circle + logo-ring row + '+' operator; text overlays on top.",
+    "concept_one_liner": "Integration equation: Notion mascot + your stack = Organize Everything."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake.",
+    "nano_banana_json": {
+      "scene": "Warm yellow canvas framed by a thick 30px solid black border. Inside: small Notion logo top-center, two-line Title-Case ExtraBold headline, SemiBold sans subhead, horizontal logo-equation row (mascot circle + '+' + 5 tool-logo circles), black CTA pill bottom.",
+      "environment": { "canvas_background": "#FFD63A", "frame": "30px solid #000000 border all four sides" },
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat render" },
+      "color_palette": [
+        { "hex": "#FFD63A", "role": "canvas yellow", "coverage_pct": 50 },
+        { "hex": "#000000", "role": "frame + typography + CTA", "coverage_pct": 25 },
+        { "hex": "#FFFFFF", "role": "logo circles + CTA text", "coverage_pct": 15 },
+        { "hex": "#4A154B", "role": "Slack logo accent", "coverage_pct": 1 },
+        { "hex": "#2D7FF9", "role": "Jira blue", "coverage_pct": 1 }
+      ],
+      "composition": {
+        "layout_archetype": "framed billboard with equation row",
+        "vertical_zones": [
+          "Top 6%: Notion N logo + wordmark, small",
+          "Top 14-42%: two-line Title Case ExtraBold headline",
+          "Center 44-52%: SemiBold subhead",
+          "Center 55-72%: horizontal equation row — Notion mascot circle + '+' symbol + 5 tool-logo circles (Slack, GitHub, Google Drive, Jira, Microsoft Teams)",
+          "Bottom 78-90%: black CTA pill"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Organize Everything.\nAccomplish Anything.", "font": "Geometric ExtraBold sans", "size_relative": "95px", "color": "#000000", "case": "Title Case", "alignment": "center", "line_height": "1.02" },
+        { "role": "subhead", "content": "The Collaborative Workspace\nwith AI Automation", "font": "Sans SemiBold", "size_relative": "42px", "color": "#000000", "alignment": "center", "line_height": "1.1" },
+        { "role": "cta_pill", "content": "Free 3 Month Trial with Full AI Access ✦", "font": "Sans SemiBold", "size_relative": "34px", "color": "#FFFFFF", "button_fill": "#1A1A1A", "button_radius": "fully pilled" }
+      ],
+      "equation_row_spec": {
+        "notion_mascot_circle": "White circle ~120px diameter containing Notion's scribble-line-art mascot face (simple black line drawing of a face with cap/hair)",
+        "plus_symbol": "Black '+' symbol, ~50px, between mascot and logo row",
+        "logo_ring": "5 white circles (each ~90px diameter) in a tight row, each containing a recognizable tool logo: Slack (multicolor #), GitHub (black Octocat), Google Drive (tri-color triangle), Jira (blue stacked chevrons), Microsoft Teams (purple T)"
+      },
+      "negative_prompt": ["no drop shadows on text", "no gradient", "no photorealism", "no stock photography", "no emoji", "no exclamation marks", "no blurred or unrecognizable logos in logo ring"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate yellow canvas + black frame + mascot circle + '+' + 5 white circles with logos + CTA pill shell (no CTA text). All headline/subhead/CTA text overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Warm yellow #FFD63A canvas 1080x1080 with a 30px solid black border frame all four sides. Inside: small Notion N logo + wordmark top-center (6%). In the middle-lower band (y:55-72%): a horizontal equation row composed of — a 120px white circle containing Notion's scribble-line-art face mascot (cap/hair, simple black line face), a black '+' symbol, and 5 tight-together 90px white circles each containing a recognizable software logo (Slack hash in multicolor, GitHub black Octocat, Google Drive tri-color triangle, Jira blue chevrons, Microsoft Teams purple T). Bottom (78-90%): empty black pill-shaped CTA button with no text inside. Upper 14-52% reserved empty yellow space for overlaid text.",
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat render" },
+      "color_palette": [
+        { "hex": "#FFD63A", "role": "canvas" },
+        { "hex": "#000000", "role": "frame + CTA pill + plus symbol" },
+        { "hex": "#FFFFFF", "role": "logo circles" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [10, 90], "y": [14, 42] } },
+          { "role": "subhead", "bbox_pct": { "x": [10, 90], "y": [44, 52] } },
+          { "role": "cta_pill_text", "bbox_pct": { "x": [20, 80], "y": [80, 88] } }
+        ]
+      },
+      "negative_prompt": ["no headline text", "no subhead text", "no CTA text inside pill button", "text is only allowed inside the small logo circles of the equation row (as part of those brand logos)"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "Organize Everything.\nAccomplish Anything.", "font_family": "Inter/Söhne ExtraBold", "weight": "800", "size_px": 95, "color_hex": "#000000", "case": "Title Case", "position_bbox_pct": { "x": [10, 90], "y": [14, 42] }, "alignment": "center", "line_height": 1.02 },
+        { "role": "subhead", "content": "The Collaborative Workspace\nwith AI Automation", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 42, "color_hex": "#000000", "position_bbox_pct": { "x": [10, 90], "y": [44, 52] }, "alignment": "center", "line_height": 1.1 },
+        { "role": "cta_pill_text", "content": "Free 3 Month Trial with Full AI Access ✦", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 34, "color_hex": "#FFFFFF", "position_bbox_pct": { "x": [20, 80], "y": [80, 88] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Notion N logo + wordmark", "fallback_composite_source": "brand-kit/notion-logo.svg", "fidelity_confidence": "medium" },
+      { "name": "Notion face mascot", "prompt_language_for_image_gen": "Notion's scribble-drawn face character: simple black thin-line drawing of a face with slight squiggle hair/cap, cartoon eyes, small mouth, contained in a white 120px circle.", "fallback_composite_source": "brand-kit/notion-mascots/face.svg", "fidelity_confidence": "low — composite recommended" },
+      { "name": "Tool logos (Slack, GitHub, Google Drive, Jira, Microsoft Teams)", "prompt_language_for_image_gen": "Five recognizable software product logos, each on a clean white 90px circle, in a tight horizontal row: Slack (4-color hash), GitHub (black Octocat cat-silhouette), Google Drive (tri-color triangle: blue, yellow, green), Jira (blue stacked chevrons), Microsoft Teams (purple T).", "fallback_composite_source": "brand-kit/third-party-logos/", "fidelity_confidence": "low — image gen often misrenders logos; composite mandatory for production" }
+    ]
+  },
+
+  "patterns_exemplified": ["C7 unification/equation layout", "CP-3 verb-rhythm (period-per-line)", "DP-4 3-color palette", "B10 negative space", "DP-13 centered editorial poster"],
+
+  "prompt_writer_training_notes": "Third-party logos are the hardest element for image gen to handle correctly — ALWAYS mark fidelity_confidence=low and recommend composite from brand kit. The '+' symbol must be visually prominent and centered — it's the literal concept of the ad. Thick black frame (30px) is a deliberate 'billboard' signal; don't soften it."
+}

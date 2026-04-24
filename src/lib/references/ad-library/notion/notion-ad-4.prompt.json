@@ -1,0 +1,295 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "notion-ad-4",
+  "brand": "Notion",
+  "source_image": "./notion-ad-4.jpg",
+  "awareness_stage": "Product Aware",
+  "register": "SaaS/B2B Editorial",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "The concept is card-in-frame: the ad IS a Notion page floating on a yellow canvas with stacked paper depth. The card surface, window chrome, product UI screenshot strip, and the yellow frame must be generated (requires image-gen). But the headline, offer line, and two CTA buttons must be pixel-perfect with surgical word-coloring ($12,000 in blue, 'free' in red) — text compositing in post guarantees accuracy. Track B is the recommended path; Track A provided as a full-bake experiment.",
+    "concept_one_liner": "Ad presents itself as a Notion page on a yellow desk — product UI screenshots become the proof layer."
+  },
+
+  "canvas": {
+    "aspect_ratio": "1:1",
+    "dimensions_px": "1080x1080",
+    "placement": "Meta feed square"
+  },
+
+  "prompt_track_A_full_bake": {
+    "description": "Single image-gen prompt producing the entire ad including all typography. Use only if verified text rendering is reliable on current Nano Banana 2 build.",
+    "nano_banana_json": {
+      "scene": "A stylized advertisement composition that looks like a Notion web page floating on a warm yellow canvas, photographed top-down as if laid on a desk, with subtle paper-depth from two offset card layers behind the primary card.",
+      "subject": {
+        "description": "A rounded-rectangle white card that mimics a browser window, occupying approximately 80% of the 1080x1080 canvas, centered, with generous margin on all sides of the yellow frame.",
+        "card_details": "Clean white fill (#FFFFFF), 24px corner radius, no drop shadow, one fine 1px light gray border. Two ghosted offset card silhouettes behind it (offset 12px down-left and 24px down-left, each 60% opacity gray-white) to imply a stack of pages.",
+        "window_chrome": "Top-left: Notion N logo (a geometric black-and-white letter N inside a slightly 3D paper-fold square icon, ~56px tall) next to the wordmark 'Notion' in black ExtraBold sans. Top-right: a blue pill button (#2D7FF9) with white text 'Get Started Free', ~44px tall, 20px horizontal padding."
+      },
+      "environment": {
+        "canvas_background": "Flat warm yellow (#FFD63A) fills the 1080x1080 canvas; the white card sits on top.",
+        "props": [],
+        "background_elements": ["two ghosted stacked cards behind main card for depth"]
+      },
+      "camera": {
+        "lens_mm": null,
+        "aperture": null,
+        "angle": "direct overhead / perfectly top-down flat-lay",
+        "distance": "medium",
+        "framing": "square 1:1, card centered, ~10% margin of yellow visible around card on all sides",
+        "notes": "This is a graphic composition, not a photograph — camera fields are vestigial. Treat as a flat vector render."
+      },
+      "lighting": {
+        "key_light": "even diffused ambient, no directional key",
+        "fill": "none — flat render",
+        "mood": "clean, confident, editorial",
+        "shadows": "zero drop shadows on any element; only a 1px card border carries edge definition"
+      },
+      "color_palette": [
+        { "hex": "#FFD63A", "role": "canvas background yellow", "coverage_pct": 30 },
+        { "hex": "#FFFFFF", "role": "primary card surface", "coverage_pct": 55 },
+        { "hex": "#000000", "role": "primary typography", "coverage_pct": 10 },
+        { "hex": "#2D7FF9", "role": "Get Started Free CTA + $12,000 accent", "coverage_pct": 2 },
+        { "hex": "#E84B3B", "role": "'free' accent word", "coverage_pct": 1 },
+        { "hex": "#E6EFFF", "role": "Free 3 Month Trial pill background", "coverage_pct": 2 }
+      ],
+      "composition": {
+        "layout_archetype": "card-in-frame",
+        "focal_points": ["headline 'Automate Your Daily Tasks'", "dollar-anchor line with surgical coloring", "AI Access CTA pill", "bottom UI screenshot strip"],
+        "negative_space_pct": 25,
+        "grid": "centered editorial, strict vertical rhythm",
+        "vertical_zones": [
+          "Top 15%: logo left + Get Started Free CTA right (inside white card)",
+          "Center 30%: two-line headline 'Automate Your / Daily Tasks'",
+          "Center 10%: offer line 'Get up to $12,000 of free Notion'",
+          "Center 12%: AI Access pill button",
+          "Bottom 33%: product UI screenshot strip"
+        ]
+      },
+      "style_directives": [
+        "flat 2D graphic design, not photographic",
+        "editorial SaaS aesthetic (Notion, Linear, Vercel design language)",
+        "disciplined typographic hierarchy, no ornament"
+      ],
+      "text_elements_in_image": [
+        {
+          "role": "logo_wordmark",
+          "content": "Notion",
+          "font": "Notion's geometric ExtraBold sans (similar to Inter ExtraBold or Söhne Kraftig)",
+          "size_relative": "36px at 1080px canvas width",
+          "color": "#000000",
+          "position": "inside white card, top-left, ~40px padding from card edges",
+          "alignment": "left"
+        },
+        {
+          "role": "top_cta_button",
+          "content": "Get Started Free",
+          "font": "Geometric sans, Medium weight",
+          "size_relative": "22px",
+          "color": "#FFFFFF",
+          "button_fill": "#2D7FF9",
+          "button_radius": "22px (fully pilled)",
+          "position": "inside white card, top-right, ~40px padding from card edges",
+          "alignment": "center"
+        },
+        {
+          "role": "headline",
+          "content": "Automate Your\nDaily Tasks",
+          "font": "Geometric ExtraBold sans (Inter/Söhne ExtraBold)",
+          "size_relative": "100px",
+          "color": "#000000",
+          "position": "centered inside card, ~25% from top",
+          "alignment": "center",
+          "line_height": "0.98",
+          "kerning": "tight"
+        },
+        {
+          "role": "offer_line",
+          "content": "Get up to $12,000 of free Notion",
+          "font": "Geometric sans, SemiBold",
+          "size_relative": "44px",
+          "color": "#000000",
+          "color_overrides": [
+            { "substring": "$12,000", "color": "#2D7FF9" },
+            { "substring": "free", "color": "#E84B3B" }
+          ],
+          "position": "below headline",
+          "alignment": "center"
+        },
+        {
+          "role": "ai_access_pill",
+          "content": "Free 3 Month Trial, Full AI Access ✦",
+          "font": "Geometric sans, SemiBold",
+          "size_relative": "36px",
+          "color": "#000000",
+          "button_fill": "#E6EFFF",
+          "button_radius": "32px",
+          "trailing_icon": "small four-pointed sparkle glyph",
+          "position": "below offer line, horizontally centered",
+          "alignment": "center"
+        }
+      ],
+      "embedded_product_ui_strip": {
+        "description": "Bottom third of the card shows 3 stacked/overlapping Notion UI screenshots rendered as rounded-corner floating panels at slight overlap. Each shows a real Notion view.",
+        "panels": [
+          {
+            "order": 1,
+            "content_type": "line chart dashboard 'Daily Report', 'Downloads by ...' label visible, multicolored stacked area chart",
+            "approx_size": "240px wide x 170px tall",
+            "position": "left",
+            "style": "white panel, 12px radius, 1px light border, no shadow"
+          },
+          {
+            "order": 2,
+            "content_type": "Notion database table 'Engineering Tasks' with columns 'Projects', 'As Title', 7 rows of task rows with checkbox statuses",
+            "approx_size": "280px wide x 200px tall",
+            "position": "center, slightly forward in z-order",
+            "style": "white panel, 12px radius, 1px light border"
+          },
+          {
+            "order": 3,
+            "content_type": "kanban/status view 'Launch checklist' with By status, Timeline, Kanban tabs and rows showing 'Write email announcement Done', 'Email content Done', 'Internal training with Sales In progress', 'Email images Backlog'",
+            "approx_size": "280px wide x 210px tall",
+            "position": "right",
+            "style": "white panel, 12px radius, 1px light border"
+          }
+        ]
+      },
+      "negative_prompt": [
+        "no stock photo feel",
+        "no gradient mesh",
+        "no glassmorphism",
+        "no drop shadows on text",
+        "no emoji in copy",
+        "no exclamation marks",
+        "no text outlines or text effects",
+        "no all-caps CTAs",
+        "no photorealism",
+        "no Arial or generic default system fonts",
+        "no blurred or smudged UI text"
+      ]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Recommended path. Generate the yellow canvas + white card + ghosted stacked cards + product UI strip. Leave the vertical zones for headline, offer line, and AI Access pill as empty white space. Compositor overlays all text in post to guarantee typography accuracy and surgical word-coloring.",
+    "nano_banana_json": {
+      "scene": "Flat-lay graphic composition: a white rounded-rectangle card floating on a warm yellow canvas, with two ghosted offset card silhouettes behind it implying a stack. The card has a small Notion N logo and wordmark in the top-left and a blue 'Get Started Free' pill button in the top-right. Lower third of the card contains three overlapping Notion UI screenshot panels. The vertical middle 50% of the card is intentionally blank white space reserved for overlaid text.",
+      "subject": "White rounded card, 80% of 1080x1080 canvas, centered, 24px corner radius, 1px #EEEEEE border, no drop shadow.",
+      "environment": "Solid warm yellow (#FFD63A) background fills canvas. Two ghosted card silhouettes (60% opacity gray-white) offset 12px and 24px down-left behind the main card.",
+      "camera": { "angle": "direct top-down flat-lay", "framing": "1:1 square, 10% margin of yellow around card" },
+      "lighting": { "style": "flat graphic render, no directional light, no shadows" },
+      "color_palette": [
+        { "hex": "#FFD63A", "role": "canvas yellow" },
+        { "hex": "#FFFFFF", "role": "card surface" },
+        { "hex": "#000000", "role": "logo + screenshot UI ink" },
+        { "hex": "#2D7FF9", "role": "Get Started Free pill fill" }
+      ],
+      "composition": {
+        "layout_archetype": "card-in-frame",
+        "generate_elements": [
+          "Notion N logo + wordmark, top-left of card, ~40px padding",
+          "Blue 'Get Started Free' pill button, top-right of card, ~40px padding",
+          "Three overlapping Notion UI screenshot panels in bottom 33% of card (line chart dashboard, database table, kanban status view)",
+          "Two ghosted stacked cards behind main card"
+        ],
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [10, 90], "y": [22, 48] }, "keep_as_negative_space": true },
+          { "role": "offer_line", "bbox_pct": { "x": [10, 90], "y": [48, 58] }, "keep_as_negative_space": true },
+          { "role": "ai_access_pill", "bbox_pct": { "x": [20, 80], "y": [58, 68] }, "keep_as_negative_space": true }
+        ]
+      },
+      "style_directives": [
+        "flat 2D graphic design, editorial SaaS",
+        "product UI panels must be legibly detailed (column headers readable, status pills visible) but not the focal element",
+        "no baked-in headline or body copy in reserved zones"
+      ],
+      "negative_prompt": [
+        "no headline text in reserved zones",
+        "no offer line text",
+        "no CTA pill text beyond Get Started Free in top-right",
+        "no stock photo feel",
+        "no gradient mesh",
+        "no drop shadows on text",
+        "no photorealism"
+      ]
+    },
+    "text_overlay_spec": {
+      "description": "Compositor applies these text elements over the generated Track B background.",
+      "elements": [
+        {
+          "role": "headline",
+          "content": "Automate Your\nDaily Tasks",
+          "font_family": "Inter / Söhne ExtraBold (substitute any geometric ExtraBold sans)",
+          "weight": "ExtraBold (800)",
+          "size_px": 100,
+          "color_hex": "#000000",
+          "position_bbox_pct": { "x": [10, 90], "y": [22, 48] },
+          "alignment": "center",
+          "line_height": 0.98,
+          "letter_spacing": "-0.02em"
+        },
+        {
+          "role": "offer_line",
+          "content": "Get up to $12,000 of free Notion",
+          "font_family": "Inter / Söhne SemiBold",
+          "weight": "SemiBold (600)",
+          "size_px": 44,
+          "color_hex": "#000000",
+          "color_overrides": [
+            { "substring": "$12,000", "color_hex": "#2D7FF9" },
+            { "substring": "free", "color_hex": "#E84B3B" }
+          ],
+          "position_bbox_pct": { "x": [10, 90], "y": [48, 58] },
+          "alignment": "center"
+        },
+        {
+          "role": "ai_access_pill",
+          "content": "Free 3 Month Trial, Full AI Access ✦",
+          "font_family": "Inter / Söhne SemiBold",
+          "weight": "SemiBold (600)",
+          "size_px": 36,
+          "color_hex": "#000000",
+          "pill_fill_hex": "#E6EFFF",
+          "pill_radius_px": 32,
+          "pill_padding": "12px vertical, 28px horizontal",
+          "position_bbox_pct": { "x": [20, 80], "y": [58, 68] },
+          "alignment": "center"
+        }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "description": "Notion-owned assets referenced in the ad. Provide prompt language for image-gen attempts and a composite fallback path.",
+    "assets": [
+      {
+        "name": "Notion N logo",
+        "prompt_language_for_image_gen": "A geometric black-and-white letterform 'N' made of two thick vertical strokes connected by a diagonal, inside a rounded square icon with a very subtle paper-fold / 3D edge shadow on the right side. Icon is ~56px tall, solid fill, white on black or black on white depending on context.",
+        "fallback_composite_source": "brand-kit/notion-logo.svg (add to brand kit if missing)",
+        "fidelity_confidence": "medium — iterate if first pass is off"
+      },
+      {
+        "name": "Notion product UI screenshots (Daily Report chart, Engineering Tasks database, Launch checklist)",
+        "prompt_language_for_image_gen": "Three separate Notion-style UI panels: (1) a line/area chart dashboard with small gray header reading 'Daily Report' and subheader 'Downloads by ...', multiple stacked colored area bands in muted gray/blue/green tones; (2) a database table with header 'Engineering Tasks' and two columns 'Projects' and 'As Title', 7 rows each with a small checkbox status dot and task name text; (3) a kanban status view with tabs 'By status / Timeline / Kanban', showing 4 rows with status pills 'Done' (green), 'Done' (green), 'In progress' (blue), 'Backlog' (gray). All panels on white with 12px corner radius and 1px #EEEEEE border.",
+        "fallback_composite_source": "brand-kit/notion-ui-panels/{daily-report,engineering-tasks,launch-checklist}.png",
+        "fidelity_confidence": "low — UI details are hard for image gen; composite fallback recommended"
+      }
+    ]
+  },
+
+  "patterns_exemplified": [
+    "DP-3 card-in-frame",
+    "CP-1 dollar-anchored headline",
+    "CP-2 hedged number ('Get up to')",
+    "DP-5 surgical word-coloring ($12,000 blue, 'free' red)",
+    "CP-6 CTA-as-objection-handler (AI Access in pill)",
+    "CP-7 dual-CTA ladder (Get Started Free + Free 3 Month Trial)",
+    "DP-6 real product UI screenshots",
+    "DP-4 3-color max palette (+2 offer accents)",
+    "DP-9 warm canvas for creator/IG targeting"
+  ],
+
+  "prompt_writer_training_notes": "Key lessons from this ad: (1) Card-in-frame archetype requires explicit window chrome description (logo placement, top-right CTA) — describe as structural, not decorative. (2) Surgical word-coloring is a post-composite move — always Track B when specific words need hex-accurate color. (3) Product UI panels should be described with legible header text + specific column/tab names so image-gen renders recognizable UI, not abstract rectangles. (4) Yellow canvas (#FFD63A) is a deliberate audience signal (creator/IG); don't substitute with a generic gradient. (5) Use 'flat graphic render' and set lens_mm/aperture to null when the composition is NOT photographic — this prevents image gen from introducing unwanted depth-of-field blur. (6) Every negative_prompt entry must match a specific anti-pattern; 'no stock photo feel' alone is too vague — add 'no drop shadows on text', 'no gradient mesh', etc. to establish structural boundaries."
+}

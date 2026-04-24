@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "airbnb-ad-3",
+  "brand": "Airbnb",
+  "source_image": "./airbnb-ad-3.jpg",
+  "awareness_stage": "Solution Aware",
+  "register": "Luxury DTC / App marketing",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Single phone with rich UI content (photorealistic render) paired with a three-word typographic headline. Headline must be pixel-perfect (brand tagline moment) — Track B. Generate cream canvas + pink app icon + one full-UI phone cropped on right edge.",
+    "concept_one_liner": "Three-word tagline ad — 'Quick. Easy. Airbnb.' — paired with a single phone showing the app in use."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake.",
+    "nano_banana_json": {
+      "scene": "Warm cream canvas with Airbnb pink app icon top-center, three-word ExtraBold black headline 'Quick. Easy. Airbnb.' below, and a single iPhone at 3/4 scale in the bottom 65% showing the Airbnb Homes home screen with recently viewed listings grid. Phone is cropped on the right edge (~10% trim).",
+      "environment": { "canvas_background": "#F2ECE3 warm cream (same as airbnb-ad-2)" },
+      "camera": { "style": "photorealistic phone render, flat graphic canvas" },
+      "lighting": { "style": "soft studio for phone" },
+      "color_palette": [
+        { "hex": "#F2ECE3", "role": "canvas cream", "coverage_pct": 35 },
+        { "hex": "#FF5A5F", "role": "Airbnb Rausch app icon + Homes tab accent", "coverage_pct": 4 },
+        { "hex": "#000000", "role": "headline typography", "coverage_pct": 12 },
+        { "hex": "#1A1A1A", "role": "phone body", "coverage_pct": 8 },
+        { "hex": "#FFFFFF", "role": "phone screen surface", "coverage_pct": 20 },
+        { "hex": "#D97450", "role": "listing interior warm tones (Mexico City/Coyoacán) — multiple", "coverage_pct": 15 },
+        { "hex": "#E0A8B4", "role": "pink bedroom listing", "coverage_pct": 6 }
+      ],
+      "composition": {
+        "layout_archetype": "centered vertical with cropped-right phone",
+        "vertical_zones": [
+          "Top 10%: Airbnb rounded-square app icon (Rausch pink with white Bélo)",
+          "Top 20-32%: three-word ExtraBold Title Case headline 'Quick. Easy. Airbnb.'",
+          "Bottom 35-100%: single iPhone at 3/4 scale, cropped ~10% at right edge"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Quick. Easy. Airbnb.", "font": "Airbnb house ExtraBold sans (Circular / Cereal)", "size_relative": "110px", "color": "#000000", "alignment": "center", "case": "Title Case", "periods_required": true, "notes": "Three words each ending in a period — periods are load-bearing to the rhythm" }
+      ],
+      "phone_ui_content": {
+        "status_bar": "9:41 with signal/wifi/battery",
+        "search_bar": "white rounded pill with magnifier icon, text 'Start your search' in gray",
+        "tabs": "Three tabs: Homes (with small house-icon, selected/underlined), Experiences (with hot-air-balloon icon, NEW red-pill badge), Services (with bell icon, NEW red-pill badge)",
+        "recently_viewed": "'Recently viewed homes >' label followed by a horizontal grid of 4 square listing thumbnails. Listings visible left-to-right: Mexico City (orange chair interior, 2 beds, ★ 4.93), Mexico City (pink bedroom, 5 beds, ★ 4.92), Coyoacán (blue fireplace architectural interior, 6 beds, ★ 4.95), and a fourth partially cropped listing. Each thumbnail has a small heart icon top-right and city/bed-count/rating below."
+      },
+      "negative_prompt": ["no exclamation marks (periods only)", "no drop shadows on text", "no gradient", "no stock phone template", "no blurred UI — phone screen must be legibly detailed", "no emoji"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Cream canvas + app icon + phone with full UI, all baked. Only the headline text is overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Warm cream #F2ECE3 canvas. Top 10%: centered Airbnb rounded-square app icon (pink, Bélo inside). Bottom 65%: single iPhone at 3/4 scale, cropped ~10% at right edge, showing Airbnb Homes home screen with status bar, search pill, tabs row with NEW badges, 'Recently viewed homes' grid of 4 square thumbnails (Mexico City orange-chair, Mexico City pink bedroom, Coyoacán blue fireplace, 4th partial). Middle 20-32% reserved empty cream space for overlaid headline.",
+      "camera": { "style": "photorealistic phone, flat graphic canvas" },
+      "color_palette": [
+        { "hex": "#F2ECE3", "role": "canvas" },
+        { "hex": "#FF5A5F", "role": "app icon + Homes tab underline" },
+        { "hex": "#1A1A1A", "role": "phone body" },
+        { "hex": "#FFFFFF", "role": "phone screen" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [5, 95], "y": [20, 32] } }
+        ]
+      },
+      "negative_prompt": ["no headline text in reserved zone", "no marketing copy outside phone UI"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "Quick. Easy. Airbnb.", "font_family": "Airbnb Cereal ExtraBold / Circular ExtraBold", "weight": "800", "size_px": 110, "color_hex": "#000000", "position_bbox_pct": { "x": [5, 95], "y": [20, 32] }, "alignment": "center", "case": "Title Case", "notes": "Periods MUST be present — tagline rhythm depends on them" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Airbnb app icon", "fallback_composite_source": "brand-kit/airbnb-app-icon.svg", "fidelity_confidence": "medium" },
+      { "name": "Airbnb Homes home screen UI", "prompt_language_for_image_gen": "iOS screen: 9:41 status, 'Start your search' white pill with magnifier, three tabs (Homes underlined with house icon, Experiences with balloon and red NEW badge, Services with bell and red NEW badge), 'Recently viewed homes >' label, 4 square listing thumbnails with heart icons and city/beds/star-rating labels.", "fallback_composite_source": "brand-kit/airbnb-ui/home-screen.png", "fidelity_confidence": "medium" }
+    ]
+  },
+
+  "patterns_exemplified": ["CP-3 three-word headline ending in brand name", "A1 period-per-word tagline", "DP-11 cream canvas campaign consistency", "C1 product UI integrated into ad"],
+
+  "prompt_writer_training_notes": "Three-word tagline is a precise rhythm — period after EACH word, including the brand name. 'Quick. Easy. Airbnb.' not 'Quick, Easy, Airbnb' or 'Quick Easy Airbnb!'. Phone right-edge crop is intentional 'there's more' energy — instruct 'cropped ~10% at right edge' explicitly. NEW badges on Experiences and Services tabs are a deliberate product-launch signal — preserve them. Cream hex (#F2ECE3) matches airbnb-ad-2 for campaign consistency."
+}

@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "notion-ad-2",
+  "brand": "Notion",
+  "source_image": "./notion-ad-2.jpg",
+  "awareness_stage": "Solution Aware",
+  "register": "SaaS/B2B Editorial",
+
+  "creative_direction": {
+    "approach": "hybrid",
+    "reasoning": "Typography carries the ad (two-line parallel headline + italic tagline) but the bottom illustration — two figures with a shared cloud of ideas in Notion's house style — is a distinctive visual asset that must be rendered. Track B: background provides pure white + illustration; text composites.",
+    "concept_one_liner": "Book-cover editorial headline promising everything/anything, anchored by a line-art human collaboration scene."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full bake including typography.",
+    "nano_banana_json": {
+      "scene": "Pure white editorial poster with a two-line black ExtraBold sans headline upper-third, an italic sans subhead below, a blue CTA pill in middle, and a hand-drawn line-art illustration of two people with a shared thought cloud in the lower third.",
+      "subject": "Editorial book-jacket-style typographic composition.",
+      "environment": { "canvas_background": "#FFFFFF pure white" },
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat render, no shadows" },
+      "color_palette": [
+        { "hex": "#FFFFFF", "role": "canvas", "coverage_pct": 75 },
+        { "hex": "#000000", "role": "typography + line art", "coverage_pct": 18 },
+        { "hex": "#2D7FF9", "role": "CTA pill fill", "coverage_pct": 5 },
+        { "hex": "#FFD63A", "role": "yellow accent inside illustration cloud", "coverage_pct": 2 }
+      ],
+      "composition": {
+        "layout_archetype": "centered editorial poster",
+        "vertical_zones": [
+          "Top 7%: Notion N logo + wordmark, centered",
+          "Top 15-45%: two-line ExtraBold headline",
+          "Below: italic SemiBold subhead",
+          "Center 58-68%: blue CTA pill",
+          "Bottom 30%: line-art illustration"
+        ]
+      },
+      "text_elements_in_image": [
+        { "role": "headline", "content": "Organize everything.\nAccomplish anything.", "font": "Geometric ExtraBold sans", "size_relative": "115px", "color": "#000000", "alignment": "center", "line_height": "1.02", "punctuation_note": "periods are load-bearing — must be present" },
+        { "role": "subhead", "content": "Where human creativity meets AI efficiency.", "font": "Sans SemiBold Italic", "size_relative": "42px", "color": "#000000", "alignment": "center" },
+        { "role": "cta_pill", "content": "Free 3 Month Trial with Full AI Access", "font": "Sans SemiBold", "size_relative": "34px", "color": "#FFFFFF", "button_fill": "#2D7FF9", "button_radius": "fully pilled" }
+      ],
+      "illustration_spec": {
+        "style": "Notion house illustration style — hand-drawn line art, thin black strokes, flat color fills, imperfect edges.",
+        "content": "Two figures seated back-to-back on chairs facing left and right, laptops on laps. Between and above them, a black organic cloud shape containing colorful object doodles: pencil, clock (white), blue checkmark, red ticker-shape, yellow sparkle, sticky note, star burst, moon, feather. The cloud connects the two figures' heads implying shared ideation.",
+        "position": "bottom 30% of canvas, centered"
+      },
+      "negative_prompt": ["no drop shadows on text", "no gradient", "no stock photography", "no emoji", "no exclamation marks", "no photorealism"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "White canvas + line-art illustration in bottom 30% only. All text overlaid in post.",
+    "nano_banana_json": {
+      "scene": "Pure white #FFFFFF canvas 1080x1080, with small Notion N logo + wordmark centered at top (7% from top edge), and in the bottom 30% a Notion house-style line-art illustration of two people back-to-back with laptops, sharing a black organic cloud filled with small colorful object doodles (pencil, clock, checkmark, ticker, sparkle, sticky note). Upper 60% is reserved empty white space.",
+      "camera": { "angle": "flat graphic" },
+      "lighting": { "style": "flat render, no shadows" },
+      "color_palette": [
+        { "hex": "#FFFFFF", "role": "canvas" },
+        { "hex": "#000000", "role": "line art" },
+        { "hex": "#FFD63A", "role": "yellow sparkle in cloud" },
+        { "hex": "#2D7FF9", "role": "blue checkmark in cloud" },
+        { "hex": "#E84B3B", "role": "red ticker in cloud" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "headline", "bbox_pct": { "x": [8, 92], "y": [15, 45] }, "keep_as_negative_space": true },
+          { "role": "subhead", "bbox_pct": { "x": [10, 90], "y": [48, 55] } },
+          { "role": "cta_pill", "bbox_pct": { "x": [15, 85], "y": [58, 68] } }
+        ]
+      },
+      "negative_prompt": ["no headline text", "no body copy", "no CTA text", "text only in the bottom illustration's doodle cloud (objects, not words)"]
+    },
+    "text_overlay_spec": {
+      "elements": [
+        { "role": "headline", "content": "Organize everything.\nAccomplish anything.", "font_family": "Inter/Söhne ExtraBold", "weight": "800", "size_px": 115, "color_hex": "#000000", "position_bbox_pct": { "x": [8, 92], "y": [15, 45] }, "alignment": "center", "line_height": 1.02 },
+        { "role": "subhead", "content": "Where human creativity meets AI efficiency.", "font_family": "Inter/Söhne SemiBold Italic", "weight": "600", "size_px": 42, "style": "italic", "color_hex": "#000000", "position_bbox_pct": { "x": [10, 90], "y": [48, 55] }, "alignment": "center" },
+        { "role": "cta_pill", "content": "Free 3 Month Trial with Full AI Access", "font_family": "Inter/Söhne SemiBold", "weight": "600", "size_px": 34, "color_hex": "#FFFFFF", "pill_fill_hex": "#2D7FF9", "pill_radius_px": 999, "position_bbox_pct": { "x": [15, 85], "y": [58, 68] }, "alignment": "center" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Notion N logo + wordmark", "prompt_language_for_image_gen": "Small geometric black 'N' icon with subtle 3D paper-fold + 'Notion' wordmark ExtraBold, ~36px tall, top-center.", "fallback_composite_source": "brand-kit/notion-logo.svg", "fidelity_confidence": "medium" },
+      { "name": "Two-figures-sharing-a-thought-cloud illustration", "prompt_language_for_image_gen": "Hand-drawn line art in Notion's house style: two seated figures (one with short hair, one with longer hair and glasses) facing outward left/right, laptops on laps, chairs visible. Between and above them a solid black organic cloud silhouette containing small colorful object doodles: white-outline pencil, white-outline clock, blue checkbox tick, red ticker bar, yellow four-point sparkle, small sticky note, starburst. Thin consistent stroke weight (~2px), imperfect organic edges, no shading.", "fallback_composite_source": "brand-kit/notion-illustrations/collab-cloud.svg", "fidelity_confidence": "medium — iterate if stroke weight inconsistent" }
+    ]
+  },
+
+  "patterns_exemplified": ["CP-3 verb-rhythm parallelism", "A4 italic tagline (as subhead)", "DP-8 negative space >50%", "DP-13 centered editorial poster", "DP-1 proprietary illustration"],
+
+  "prompt_writer_training_notes": "Periods in headline are ESSENTIAL — this is the 'verb. verb.' pattern (CP-3). Prompt must explicitly call out the periods or image gen defaults to exclamation or no punctuation. Italic subhead is a register signal; specify 'SemiBold Italic' not just 'italic' (default italic weights look wispy). Illustration style must say 'hand-drawn line art' + 'thin consistent stroke' — otherwise image gen renders it as a polished vector."
+}

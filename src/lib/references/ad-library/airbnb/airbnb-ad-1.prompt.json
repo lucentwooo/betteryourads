@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "ad_id": "airbnb-ad-1",
+  "brand": "Airbnb",
+  "source_image": "./airbnb-ad-1.jpg",
+  "awareness_stage": "Most Aware / Retargeting",
+  "register": "Luxury DTC / Hospitality",
+
+  "creative_direction": {
+    "approach": "imagery-heavy",
+    "reasoning": "Zero marketing copy. The ad is a phone device mockup showing a real Airbnb booking confirmation screen, composited onto a blurred background photograph of the same cabin interior. Image-gen must produce both the photographic background AND the phone with UI content — Track A full-bake is viable since the 'text' is UI chrome, not marketing typography. Track B offered for UI fidelity edge cases.",
+    "concept_one_liner": "Booking confirmation UI floats in front of the actual cabin it books — product IS the promise kept."
+  },
+
+  "canvas": { "aspect_ratio": "1:1", "dimensions_px": "1080x1080", "placement": "Meta feed square" },
+
+  "prompt_track_A_full_bake": {
+    "description": "Full composite: blurred cabin background + phone mockup with baked-in UI content.",
+    "nano_banana_json": {
+      "scene": "Photorealistic product composition: a black iPhone floats at a slight 3D tilt in the center of the frame, with its screen showing an Airbnb booking confirmation UI. Behind the phone: a softly blurred interior photograph of the same wooden cabin that appears on the phone screen.",
+      "subject": {
+        "description": "iPhone device (recent model, Pro-ish styling with notch/dynamic island visible, slim bezels) held upright, shown at a 5-10° tilt back",
+        "screen_content": "An Airbnb iOS app booking confirmation screen: status bar shows '9:41' time; below the status bar, an 'X' close icon on the left and a share icon on the right; headline 'Check-in today after 4:00 PM' in Airbnb's house sans ExtraBold in near-black; below that a large rounded-rectangle photograph of a cabin interior with mountain views (same cabin as the background); below the photo, two columns: left 'Check in / Fri, Jul 5 / 4:00 PM', right 'Checkout / Wed, Jul 10 / 11:00 AM', labeled in small sans",
+        "position_in_frame": "centered, phone occupies ~45% of canvas height, sits in front of blurred environment"
+      },
+      "environment": {
+        "location": "interior of a modern wooden cabin with large windows overlooking mountains",
+        "background_elements": "wood-paneled ceiling and walls visible with warm brown tones, out-of-focus cream upholstered sofa, patterned knit pillow (teal/orange), wood flooring; heavy gaussian blur / shallow-DOF effect so background reads as texture/color only, not sharp detail",
+        "lighting_direction": "natural daylight from large windows camera-left"
+      },
+      "camera": { "lens_mm": 85, "aperture": "f/1.4", "angle": "slight below-eye / front", "distance": "product-shot close (phone at ~0.5m)", "framing": "1:1, phone centered with ~30% negative space around" },
+      "lighting": { "key_light": "natural daylight from upper-left simulating window light", "fill": "warm interior bounce from wood surfaces", "mood": "serene, luxurious, calm arrival moment", "shadows": "soft natural shadows on phone body" },
+      "color_palette": [
+        { "hex": "#9C7E5A", "role": "warm wood tones (blurred bg)", "coverage_pct": 45 },
+        { "hex": "#1A1A1A", "role": "phone body", "coverage_pct": 15 },
+        { "hex": "#FFFFFF", "role": "phone UI screen background", "coverage_pct": 12 },
+        { "hex": "#4DA693", "role": "teal knit pillow inside listing photo", "coverage_pct": 8 },
+        { "hex": "#D9653E", "role": "warm orange accent lamp in listing photo", "coverage_pct": 5 },
+        { "hex": "#2E2E2E", "role": "UI typography on phone", "coverage_pct": 5 }
+      ],
+      "composition": {
+        "layout_archetype": "product-in-environment with matching-subject background",
+        "focal_points": ["phone screen (primary)", "'Check-in today after 4:00 PM' headline UI text"],
+        "negative_space_pct": 30,
+        "match_principle": "the blurred background photograph and the sharp listing photo inside the phone screen MUST depict the same cabin space — viewer should subconsciously recognize the match"
+      },
+      "style_directives": [
+        "luxury hospitality product photography (reference: Apple iPhone ads, Marriott editorial campaigns)",
+        "photorealistic, NOT a flat mockup",
+        "phone screen is crisp and legible while environment is heavily blurred",
+        "no Airbnb logo visible anywhere — UI chrome carries brand identity"
+      ],
+      "text_elements_in_image": [
+        { "role": "phone_status_bar", "content": "9:41", "font": "iOS system SF Pro", "size_relative": "sharp, standard iOS status bar size", "color": "#000000" },
+        { "role": "ui_headline", "content": "Check-in today\nafter 4:00 PM", "font": "Airbnb house sans ExtraBold (Circular or Cereal-adjacent)", "size_relative": "32px at phone-UI scale", "color": "#222222", "alignment": "left", "line_height": "1.1" },
+        { "role": "ui_dates", "content": "Check in\nFri, Jul 5\n4:00 PM", "secondary": "Checkout\nWed, Jul 10\n11:00 AM", "font": "Airbnb house sans (SemiBold for labels, SemiBold smaller for values)", "size_relative": "14-16px at phone-UI scale", "color": "#222222", "alignment": "left, two-column layout" }
+      ],
+      "negative_prompt": ["no Airbnb logo anywhere in frame", "no marketing headline over the photo", "no CTA buttons", "no 'AD' badge", "no stock photography feel", "no cheap phone mockup template", "no sharp background — background MUST be heavily blurred", "no watermarks", "no copywritten ad copy"]
+    }
+  },
+
+  "prompt_track_B_background_only": {
+    "description": "Generate blurred cabin interior + phone body with blank white screen. UI composited in post.",
+    "nano_banana_json": {
+      "scene": "Photorealistic: black iPhone floats at slight 3D tilt in the center of a 1:1 frame, with a blank white screen (no UI content). Behind the phone is a heavily blurred photograph of a wooden cabin interior with warm wood tones, teal pillow, orange accent lamp.",
+      "camera": { "lens_mm": 85, "aperture": "f/1.4", "angle": "slight below-eye" },
+      "lighting": { "style": "natural daylight from upper-left, warm interior mood" },
+      "color_palette": [
+        { "hex": "#9C7E5A", "role": "wood tones" },
+        { "hex": "#1A1A1A", "role": "phone body" },
+        { "hex": "#FFFFFF", "role": "phone screen (blank)" }
+      ],
+      "composition": {
+        "reserved_text_zones": [
+          { "role": "phone_ui", "bbox_pct": "inside phone screen area, ~x:40-60%, y:25-75%" }
+        ]
+      },
+      "negative_prompt": ["no UI content on phone screen (blank white)", "no marketing text", "no Airbnb logo"]
+    },
+    "text_overlay_spec": {
+      "notes": "This Track B requires a UI render (not a typographic overlay) — composite the real Airbnb booking screen mockup onto the blank phone screen region.",
+      "elements": [
+        { "role": "phone_ui_composite", "source": "rendered Airbnb booking-confirmation UI screen from brand kit (size to match phone screen bbox, preserve perspective tilt)" }
+      ]
+    }
+  },
+
+  "brand_assets": {
+    "assets": [
+      { "name": "Airbnb booking confirmation UI screen", "prompt_language_for_image_gen": "iOS app screen showing: status bar 9:41, X close icon top-left, share icon top-right, headline 'Check-in today after 4:00 PM' in ExtraBold sans, below a rounded-corner listing interior photo, below that two columns 'Check in Fri, Jul 5 4:00 PM' and 'Checkout Wed, Jul 10 11:00 AM' in SemiBold sans.", "fallback_composite_source": "brand-kit/airbnb-ui/booking-confirmation.png", "fidelity_confidence": "medium for full-bake, high for composite" }
+    ]
+  },
+
+  "patterns_exemplified": ["C1 product UI IS the ad", "B7 logo-off confidence", "DP-8 negative space", "DP-4 restrained palette"],
+
+  "prompt_writer_training_notes": "The matching-subject trick is subtle but critical: the blurred background and the sharp phone-screen photo MUST depict the same cabin space. Explicitly instruct image gen with 'MUST depict the same cabin space' — otherwise it generates unrelated backgrounds. Phone aperture f/1.4 is deliberate to produce strong background blur. No Airbnb logo — the UI itself is the brand signal (confidence move). Avoid the word 'mockup' in prompts — it triggers flat vector phone templates instead of photorealistic devices."
+}
