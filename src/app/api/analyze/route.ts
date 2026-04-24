@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { createJob } from "@/lib/jobs/manager";
-import { runFullAnalysis } from "@/lib/jobs/analyzer";
+import { triggerNextStage } from "@/lib/jobs/pipeline";
 import type { AnalysisInput } from "@/lib/types";
 
-// Vercel freezes the function the instant the response is sent. waitUntil
-// keeps it alive for up to maxDuration so the pipeline actually runs.
-export const maxDuration = 300;
+// This route only creates the job and kicks off the first pipeline stage.
+// The pipeline itself runs across multiple /advance invocations so each
+// stage gets its own 300s budget (Hobby plan cap).
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
@@ -21,7 +22,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Ensure URL has protocol
     const url = companyUrl.startsWith("http")
       ? companyUrl
       : `https://${companyUrl}`;
@@ -35,12 +35,9 @@ export async function POST(request: Request) {
 
     const job = await createJob(input);
 
-    // waitUntil tells Vercel to keep the function alive until this promise
-    // settles. Without it, the analysis would be killed the moment we send
-    // the response below.
     waitUntil(
-      runFullAnalysis(job.id).catch((err) => {
-        console.error(`Analysis failed for job ${job.id}:`, err);
+      triggerNextStage(job.id).catch((err) => {
+        console.error(`Failed to kick off pipeline for ${job.id}:`, err);
       })
     );
 
