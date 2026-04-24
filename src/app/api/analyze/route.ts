@@ -6,7 +6,7 @@ import type { AnalysisInput } from "@/lib/types";
 
 // Vercel freezes the function the instant the response is sent. waitUntil
 // keeps it alive for up to maxDuration so the pipeline actually runs.
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {

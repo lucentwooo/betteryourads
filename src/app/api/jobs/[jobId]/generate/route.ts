@@ -3,7 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { getJob } from "@/lib/jobs/manager";
 import { runCreativeProduction } from "@/lib/jobs/generator";
 
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 export async function POST(
   _request: Request,
