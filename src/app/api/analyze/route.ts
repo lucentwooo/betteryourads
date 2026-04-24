@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createJob } from "@/lib/jobs/manager";
 import { runFullAnalysis } from "@/lib/jobs/analyzer";
 import type { AnalysisInput } from "@/lib/types";
+
+// Vercel freezes the function the instant the response is sent. waitUntil
+// keeps it alive for up to maxDuration so the pipeline actually runs.
+export const maxDuration = 800;
 
 export async function POST(request: Request) {
   try {
@@ -30,10 +35,14 @@ export async function POST(request: Request) {
 
     const job = await createJob(input);
 
-    // Fire and forget -- analysis runs in background
-    runFullAnalysis(job.id).catch((err) => {
-      console.error(`Analysis failed for job ${job.id}:`, err);
-    });
+    // waitUntil tells Vercel to keep the function alive until this promise
+    // settles. Without it, the analysis would be killed the moment we send
+    // the response below.
+    waitUntil(
+      runFullAnalysis(job.id).catch((err) => {
+        console.error(`Analysis failed for job ${job.id}:`, err);
+      })
+    );
 
     return NextResponse.json({ jobId: job.id });
   } catch (error) {
