@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
       "./src/lib/references/**/*",
     ],
   },
+  // @sparticuz/chromium ships a prebuilt Chrome binary and needs to locate
+  // it at runtime via its own package path. If Next.js bundles it, the
+  // binary lookup breaks. Keep it (and puppeteer-core) as external modules.
+  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
 };
 
 export default nextConfig;
