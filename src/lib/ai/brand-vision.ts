@@ -89,7 +89,9 @@ HARD RULES:
 
   try {
     const message = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      // Haiku 4.5 is multimodal and plenty smart for reading hex codes
+      // off a homepage screenshot — save tokens vs Sonnet.
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 400,
       messages: [
         {

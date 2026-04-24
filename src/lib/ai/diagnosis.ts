@@ -9,6 +9,12 @@ import {
 
 const client = new Anthropic();
 
+// Model tiers — route each call to the cheapest model that can do the job.
+// Haiku 4.5 handles categorization / suggestion / short-format writing;
+// Sonnet 4 is reserved for real reasoning tasks (full diagnosis).
+const MODEL_CHEAP = "claude-haiku-4-5-20251001";
+const MODEL_SMART = "claude-sonnet-4-20250514";
+
 export async function runDiagnosis(params: {
   companyName: string;
   companyUrl: string;
@@ -28,7 +34,7 @@ export async function runDiagnosis(params: {
   const prompt = buildDiagnosisPrompt(params);
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL_CHEAP,
     max_tokens: 8000,
     messages: [{ role: "user", content: prompt }],
   });
@@ -91,7 +97,7 @@ export async function suggestCompetitors(
     websiteContent
   );
   const categoryMessage = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL_CHEAP,
     max_tokens: 200,
     messages: [{ role: "user", content: categoryPrompt }],
   });
@@ -127,7 +133,7 @@ export async function suggestCompetitors(
     city
   );
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL_CHEAP,
     max_tokens: 500,
     messages: [{ role: "user", content: competitorsPrompt }],
   });
@@ -155,7 +161,7 @@ export async function generateBrandDosAndDonts(
   const prompt = buildBrandDosAndDontsPrompt(brandProfile, websiteContent);
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL_CHEAP,
     max_tokens: 500,
     messages: [{ role: "user", content: prompt }],
   });
