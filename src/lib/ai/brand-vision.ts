@@ -142,6 +142,91 @@ HARD RULES:
   }
 }
 
+/**
+ * Vision extraction from a remote image URL (e.g. og:image). Used when we
+ * don't have a local screenshot — fast fetch + vision call, no chromium.
+ * Returns null if the URL can't be fetched or Claude rejects it.
+ */
+export async function extractBrandColorsFromUrl(
+  imageUrl: string
+): Promise<VisionBrandColors | null> {
+  let buffer: Buffer;
+  let mediaType = "image/png";
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 10_000);
+    const res = await fetch(imageUrl, { signal: ac.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const ct = res.headers.get("content-type") || "";
+    if (ct.startsWith("image/")) mediaType = ct.split(";")[0];
+    const arr = await res.arrayBuffer();
+    if (arr.byteLength > 4 * 1024 * 1024) return null;
+    buffer = Buffer.from(arr);
+  } catch {
+    return null;
+  }
+
+  // Claude vision accepts jpeg/png/webp/gif
+  const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  if (!allowed.includes(mediaType)) {
+    try {
+      buffer = await sharp(buffer).webp({ quality: 82 }).toBuffer();
+      mediaType = "image/webp";
+    } catch {
+      return null;
+    }
+  }
+
+  const prompt = `Return the brand palette from this image as JSON only.
+{"primary":"#RRGGBB","secondary":"#RRGGBB","accent":"#RRGGBB","background":"#RRGGBB","text":"#RRGGBB","confidence":"high"|"medium"|"low"}
+6-digit lowercase hex. No prose. If monochrome, return black/white honestly.`;
+
+  try {
+    const message = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 300,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType as "image/png",
+                data: buffer.toString("base64"),
+              },
+            },
+            { type: "text", text: prompt },
+          ],
+        },
+      ],
+    });
+    const raw =
+      message.content[0].type === "text" ? message.content[0].text : "";
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]) as VisionBrandColors;
+    const hex = /^#[0-9a-f]{6}$/i;
+    if (
+      !hex.test(parsed.primary) ||
+      !hex.test(parsed.background) ||
+      !hex.test(parsed.text)
+    )
+      return null;
+    parsed.primary = parsed.primary.toLowerCase();
+    parsed.secondary = parsed.secondary?.toLowerCase() || parsed.primary;
+    parsed.accent = parsed.accent?.toLowerCase() || parsed.primary;
+    parsed.background = parsed.background.toLowerCase();
+    parsed.text = parsed.text.toLowerCase();
+    return parsed;
+  } catch (err) {
+    console.error("[brand-vision] URL-based vision failed:", err);
+    return null;
+  }
+}
+
 /** Legacy detector — still exported but unused by new flow. Kept for callers. */
 export function paletteLooksBroken(colors: {
   primary: string;

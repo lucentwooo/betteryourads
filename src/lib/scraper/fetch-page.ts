@@ -11,8 +11,11 @@ export interface FetchPageResult {
   title: string;
   description: string;
   headings: string[];
+  ogImage?: string;
   /** Compact summary suitable for LLM input: title + meta + first headings. */
   summary: string;
+  /** Full rendered-text excerpt (up to ~10k chars) for downstream agents. */
+  textContent: string;
   raw: string;
 }
 
@@ -88,8 +91,17 @@ export async function fetchPageText(
     .filter((h) => h.length > 0 && h.length < 200)
     .slice(0, 12);
 
-  // Summary optimised for LLM: keep under ~2000 chars to save tokens.
-  const bodyText = stripTags(html).slice(0, 1500);
+  const ogImage =
+    html.match(
+      /<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/i
+    )?.[1] ||
+    html.match(
+      /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image["']/i
+    )?.[1] ||
+    undefined;
+
+  const fullText = stripTags(html).slice(0, 10_000);
+  const bodyText = fullText.slice(0, 1500);
   const summary = [
     title && `Title: ${title}`,
     description && `Description: ${description}`,
@@ -99,5 +111,13 @@ export async function fetchPageText(
     .filter(Boolean)
     .join("\n\n");
 
-  return { title, description, headings, summary, raw: html };
+  return {
+    title,
+    description,
+    headings,
+    ogImage,
+    summary,
+    textContent: fullText,
+    raw: html,
+  };
 }

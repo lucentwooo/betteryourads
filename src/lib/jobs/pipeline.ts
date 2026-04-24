@@ -1,19 +1,62 @@
 import path from "path";
 import { getJob, updateJob, addProgress, setStatus, getJobDir } from "./manager";
 import { upsertBrandFromJob } from "../brands/manager";
-import { scrapeWebsite } from "../scraper/website-scraper";
-import { extractBrandFromPage } from "../scraper/brand-extractor";
-import {
-  extractBrandColorsFromScreenshot,
-  paletteLooksBroken,
-} from "../ai/brand-vision";
+import { fetchPageText } from "../scraper/fetch-page";
+import { extractBrandColorsFromUrl } from "../ai/brand-vision";
 import { scrapeMetaAdLibrary } from "../scraper/meta-ad-scraper";
 import { generateBrandDosAndDonts } from "../ai/diagnosis";
 import { runResearcher } from "../agents/researcher";
 import { runStrategist } from "../agents/strategist";
 import { runCreativeDirector } from "../agents/creative-director";
-import { launchBrowser } from "../scraper/browser";
 import type { BrandProfile, CompetitorData } from "../types";
+
+// Hard cap for any single Meta Ad Library scrape. Chromium cold-launch
+// in serverless can hang indefinitely on the tarball download; without a
+// timeout it chews the whole 300s function budget. We'd rather skip ads
+// for that brand than break the whole pipeline.
+const META_SCRAPE_TIMEOUT_MS = 75_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
+const DEFAULT_BRAND: Omit<BrandProfile, "dosAndDonts"> = {
+  colors: {
+    primary: "#111111",
+    secondary: "#ffffff",
+    accent: "#111111",
+    background: "#ffffff",
+    text: "#111111",
+  },
+  typography: {
+    primary: "Inter",
+    secondary: "Inter",
+    headingWeight: 700,
+    bodyWeight: 400,
+  },
+  visualStyle: {
+    mode: "light",
+    ctaShape: "rounded",
+    corners: "rounded",
+    aesthetic: "clean, modern",
+  },
+  tone: "confident, clear, customer-focused",
+};
 
 // The full pipeline exceeds the 300s Hobby function cap if run in one
 // invocation. We split it into stages; each stage runs in its own
@@ -27,104 +70,97 @@ export type StageResult = { done: boolean };
 async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   const job = await getJob(jobId);
   if (!job) return;
-  const jobDir = getJobDir(jobId);
 
   await setStatus(jobId, "scraping-website");
   await addProgress(jobId, "Scanning website", `Loading ${job.input.companyUrl}...`);
 
-  // One browser for the whole stage — scrapeWebsite loads the URL, then
-  // we reuse the same page for brand extraction. Saves a second cold
-  // chromium launch (~20-40s) and avoids retriggering the chromium-min
-  // extract race.
-  const browser = await launchBrowser();
-  let brandProfile: BrandProfile;
-  let websiteResult: Awaited<ReturnType<typeof scrapeWebsite>>;
-  try {
-    websiteResult = await scrapeWebsite(
-      job.input.companyUrl,
-      jobDir,
-      browser
+  // No chromium in this stage. Serverless cold-start + tarball download
+  // from GitHub's CDN was burning the full 300s function budget and
+  // getting us nowhere. Plain fetch finishes in 1-3s and gives us
+  // everything the downstream agents actually need: title, meta, body
+  // text, og:image. Brand colors come from vision on the og:image when
+  // present; otherwise we fall back to a neutral default so the rest of
+  // the pipeline can still produce concepts.
+  const pageRes = await fetchPageText(job.input.companyUrl).catch((err) => {
+    console.error("[pipeline] fetchPageText failed:", err);
+    return null;
+  });
+
+  const websiteContent =
+    pageRes?.textContent || pageRes?.summary || `Company: ${job.input.companyName}`;
+
+  await updateJob(jobId, {
+    websiteContent,
+  });
+  await addProgress(
+    jobId,
+    "Website scanned",
+    pageRes
+      ? `Extracted ${websiteContent.length} characters of content${
+          pageRes.ogImage ? " (og:image found)" : ""
+        }`
+      : "Could not fetch homepage — continuing with company name only"
+  );
+
+  await setStatus(jobId, "extracting-brand");
+  await addProgress(
+    jobId,
+    "Extracting brand identity",
+    pageRes?.ogImage
+      ? "Reading brand colors from og:image..."
+      : "No og:image — using neutral default palette"
+  );
+
+  let profile: Omit<BrandProfile, "dosAndDonts"> = DEFAULT_BRAND;
+  if (pageRes?.ogImage) {
+    const vision = await extractBrandColorsFromUrl(pageRes.ogImage).catch(
+      () => null
     );
-    await updateJob(jobId, {
-      websiteScreenshot: websiteResult.screenshotPath,
-      websiteContent: websiteResult.textContent,
-    });
-    await addProgress(
-      jobId,
-      "Website scanned",
-      `Captured screenshot and extracted ${websiteResult.textContent.length} characters of content`
-    );
-
-    await setStatus(jobId, "extracting-brand");
-    await addProgress(jobId, "Extracting brand identity", "Analyzing colors, typography, and visual style...");
-
-    // scrapeWebsite left the page loaded on the target URL when we
-    // supplied an existing browser — reuse it directly.
-    const page = websiteResult.page ?? (await browser.newPage());
-    if (!websiteResult.page) {
-      await page.setViewport({ width: 1440, height: 900 });
-      try {
-        await page.goto(job.input.companyUrl, {
-          waitUntil: "domcontentloaded",
-          timeout: 20000,
-        });
-      } catch {
-        // Continue even if nav is slow
-      }
-      await new Promise((r) => setTimeout(r, 2500));
-    }
-
-    const { profile } = await extractBrandFromPage(page);
-
-    let finalColors = profile.colors;
-    if (websiteResult.localScreenshotPath) {
-      await addProgress(
-        jobId,
-        "Reading the palette",
-        "Sending homepage screenshot to Claude for color extraction..."
-      );
-      const vision = await extractBrandColorsFromScreenshot(
-        websiteResult.localScreenshotPath
-      );
-      if (vision) {
-        finalColors = {
+    if (vision) {
+      profile = {
+        ...DEFAULT_BRAND,
+        colors: {
           primary: vision.primary,
           secondary: vision.secondary,
           accent: vision.accent,
           background: vision.background,
           text: vision.text,
-        };
-        await addProgress(
-          jobId,
-          "Palette extracted",
-          `Vision read ${vision.primary} / ${vision.secondary} / ${vision.accent} (${vision.confidence} confidence)`
-        );
-      } else if (paletteLooksBroken(profile.colors)) {
-        await addProgress(
-          jobId,
-          "Palette fallback",
-          "Vision unavailable, using CSS extraction (may be imperfect)"
-        );
-      }
+        },
+      };
+      await addProgress(
+        jobId,
+        "Palette extracted",
+        `${vision.primary} / ${vision.secondary} / ${vision.accent} (${vision.confidence})`
+      );
+    } else {
+      await addProgress(
+        jobId,
+        "Palette fallback",
+        "Vision couldn't read og:image — using neutral default"
+      );
     }
+  }
 
-    const profileWithColors = { ...profile, colors: finalColors };
+  const dosAndDonts = await generateBrandDosAndDonts(profile, websiteContent).catch(
+    (err) => {
+      console.error("[pipeline] dosAndDonts failed:", err);
+      return { do: [], dont: [] };
+    }
+  );
 
-    const dosAndDonts = await generateBrandDosAndDonts(
-      profileWithColors,
-      websiteResult.textContent
-    );
+  const brandProfile: BrandProfile = { ...profile, dosAndDonts };
 
-    brandProfile = { ...profileWithColors, dosAndDonts };
-  } finally {
-    await browser.close();
+  // Store og:image as the "websiteScreenshot" so the UI has something to
+  // render. Not a true hero screenshot, but a fast, reliable stand-in.
+  if (pageRes?.ogImage) {
+    await updateJob(jobId, { websiteScreenshot: pageRes.ogImage });
   }
 
   await updateJob(jobId, { brandProfile });
   await addProgress(
     jobId,
     "Brand extracted",
-    `Found primary color ${brandProfile.colors.primary}, font ${brandProfile.typography.primary}`
+    `Primary ${brandProfile.colors.primary}, font ${brandProfile.typography.primary}`
   );
 
   await setStatus(jobId, "scraping-ads");
@@ -138,12 +174,26 @@ async function stageCompanyAds(jobId: string): Promise<void> {
 
   await addProgress(jobId, "Searching Meta Ad Library", `Looking for ${job.input.companyName} ads...`);
 
-  const companyAdsResult = await scrapeMetaAdLibrary(
-    job.input.companyName,
-    adsDir,
-    "company",
-    job.input.companyUrl
-  );
+  const companyAdsResult = await withTimeout(
+    scrapeMetaAdLibrary(
+      job.input.companyName,
+      adsDir,
+      "company",
+      job.input.companyUrl
+    ),
+    META_SCRAPE_TIMEOUT_MS,
+    `scrapeMetaAdLibrary(${job.input.companyName})`
+  ).catch((err) => ({
+    success: false,
+    ads: [],
+    totalCount: 0,
+    videoCount: 0,
+    imageCount: 0,
+    reason:
+      err instanceof Error
+        ? err.message
+        : "Meta Ad Library scrape failed",
+  }));
 
   await updateJob(jobId, {
     companyAds: companyAdsResult.ads,
@@ -181,11 +231,23 @@ async function stageOneCompetitor(jobId: string): Promise<boolean> {
 
   await addProgress(jobId, "Researching competitor", `Searching ads for ${competitorName}...`);
 
-  const competitorResult = await scrapeMetaAdLibrary(
-    competitorName,
-    adsDir,
-    competitorName.toLowerCase().replace(/\s+/g, "-")
-  );
+  const competitorResult = await withTimeout(
+    scrapeMetaAdLibrary(
+      competitorName,
+      adsDir,
+      competitorName.toLowerCase().replace(/\s+/g, "-")
+    ),
+    META_SCRAPE_TIMEOUT_MS,
+    `scrapeMetaAdLibrary(${competitorName})`
+  ).catch((err) => ({
+    success: false,
+    ads: [],
+    totalCount: 0,
+    videoCount: 0,
+    imageCount: 0,
+    reason:
+      err instanceof Error ? err.message : "Meta Ad Library scrape failed",
+  }));
 
   const entry: CompetitorData = {
     name: competitorName,
