@@ -12,7 +12,7 @@ import { runResearcher } from "../agents/researcher";
 import { runStrategist } from "../agents/strategist";
 import { runCreativeDirector } from "../agents/creative-director";
 import type { BrandProfile, CompetitorData } from "../types";
-import puppeteer from "puppeteer";
+import { launchBrowser } from "../scraper/browser";
 import path from "path";
 
 export async function runFullAnalysis(jobId: string): Promise<void> {
@@ -37,10 +37,7 @@ export async function runFullAnalysis(jobId: string): Promise<void> {
     await setStatus(jobId, "extracting-brand");
     await addProgress(jobId, "Extracting brand identity", "Analyzing colors, typography, and visual style...");
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
+    const browser = await launchBrowser();
 
     let brandProfile: BrandProfile;
     try {

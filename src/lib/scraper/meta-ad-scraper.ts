@@ -1,8 +1,8 @@
-import puppeteer from "puppeteer";
 import path from "path";
 import fs from "fs/promises";
 import type { AdScreenshot } from "../types";
 import { putImage } from "../storage/image-store";
+import { launchBrowser } from "./browser";
 
 interface MetaAdResult {
   success: boolean;
@@ -55,15 +55,7 @@ async function scrapeMetaAdLibraryInner(
   prefix: string,
   companyUrl?: string
 ): Promise<MetaAdResult> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-blink-features=AutomationControlled",
-    ],
-  });
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
@@ -378,10 +370,10 @@ async function scrapeMetaAdLibraryInner(
           continue;
         }
 
-        await (el as import("puppeteer").ElementHandle<Element>).scrollIntoView();
+        await (el as import("puppeteer-core").ElementHandle<Element>).scrollIntoView();
         await delay(400);
         const buf = Buffer.from(
-          await (el as import("puppeteer").ElementHandle<Element>).screenshot({ type: "png" })
+          await (el as import("puppeteer-core").ElementHandle<Element>).screenshot({ type: "png" })
         );
         await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
         await fs.writeFile(screenshotPath, buf);

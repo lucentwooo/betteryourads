@@ -1,7 +1,7 @@
-import puppeteer from "puppeteer";
 import path from "path";
 import fs from "fs/promises";
 import { putImage } from "../storage/image-store";
+import { launchBrowser } from "./browser";
 
 export interface WebsiteScrapResult {
   screenshotPath: string; // URL (Blob https URL in prod, /api/screenshots/... in dev)
@@ -18,14 +18,7 @@ export async function scrapeWebsite(
   url: string,
   outputDir: string
 ): Promise<WebsiteScrapResult> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-    ],
-  });
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();

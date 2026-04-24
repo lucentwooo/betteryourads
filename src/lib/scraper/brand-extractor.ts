@@ -1,4 +1,5 @@
-import puppeteer, { type Page } from "puppeteer";
+import { type Page } from "puppeteer-core";
+import { launchBrowser } from "./browser";
 import type { BrandProfile } from "../types";
 
 interface RawBrandData {
@@ -299,10 +300,7 @@ function inferAesthetic(raw: RawBrandData): string {
 export async function extractBrandFromUrl(
   url: string
 ): Promise<{ raw: RawBrandData; profile: Omit<BrandProfile, "dosAndDonts"> }> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
