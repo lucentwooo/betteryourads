@@ -183,6 +183,24 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   );
 
   await setStatus(jobId, "extracting-brand");
+  if (isCheapTest(job)) {
+    const brandProfile: BrandProfile = {
+      ...DEFAULT_BRAND,
+      dosAndDonts: {
+        do: ["Use the captured website context and plain product-specific language."],
+        dont: ["Do not spend Anthropic credits on brand vision during cheap progression tests."],
+      },
+    };
+    await updateJob(jobId, { brandProfile });
+    await addProgress(
+      jobId,
+      "Brand skipped",
+      "Cheap test mode: using neutral brand profile to avoid Anthropic vision/text calls"
+    );
+    await setStatus(jobId, "scraping-ads");
+    return;
+  }
+
   await addProgress(
     jobId,
     "Extracting brand identity",
