@@ -2,8 +2,34 @@ import Anthropic from "@anthropic-ai/sdk";
 import { promises as fs } from "fs";
 import path from "path";
 import sharp from "sharp";
+import { chatVision } from "./openrouter";
 
 const client = new Anthropic();
+
+function parseVisionJson(raw: string): VisionBrandColors | null {
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  let parsed: VisionBrandColors;
+  try {
+    parsed = JSON.parse(jsonMatch[0]) as VisionBrandColors;
+  } catch {
+    return null;
+  }
+  const hex = /^#[0-9a-f]{6}$/i;
+  if (
+    !hex.test(parsed.primary) ||
+    !hex.test(parsed.background) ||
+    !hex.test(parsed.text)
+  ) {
+    return null;
+  }
+  parsed.primary = parsed.primary.toLowerCase();
+  parsed.secondary = parsed.secondary?.toLowerCase() || parsed.primary;
+  parsed.accent = parsed.accent?.toLowerCase() || parsed.primary;
+  parsed.background = parsed.background.toLowerCase();
+  parsed.text = parsed.text.toLowerCase();
+  return parsed;
+}
 
 export interface VisionBrandColors {
   primary: string;
@@ -54,7 +80,8 @@ async function prepareHeroCrop(screenshotPath: string): Promise<{ base64: string
  * background-image heroes.
  */
 export async function extractBrandColorsFromScreenshot(
-  screenshotPath: string
+  screenshotPath: string,
+  opts: { cheap?: boolean } = {},
 ): Promise<VisionBrandColors | null> {
   const prepared = await prepareHeroCrop(screenshotPath);
   if (!prepared) {
@@ -88,6 +115,23 @@ HARD RULES:
 - Return 6-digit lowercase hex only. No commentary, no markdown fences. JSON object only.`;
 
   try {
+    if (opts.cheap) {
+      const raw = await chatVision({
+        base64: prepared.base64,
+        mediaType: prepared.mediaType,
+        prompt,
+        maxTokens: 400,
+      });
+      const parsed = parseVisionJson(raw);
+      if (!parsed) {
+        console.error(
+          "[brand-vision] cheap-mode no/invalid JSON:",
+          raw.slice(0, 200),
+        );
+      }
+      return parsed;
+    }
+
     const message = await client.messages.create({
       // Haiku 4.5 is multimodal and plenty smart for reading hex codes
       // off a homepage screenshot — save tokens vs Sonnet.
@@ -113,28 +157,10 @@ HARD RULES:
 
     const raw =
       message.content[0].type === "text" ? message.content[0].text : "";
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("[brand-vision] no JSON in response:", raw.slice(0, 200));
-      return null;
+    const parsed = parseVisionJson(raw);
+    if (!parsed) {
+      console.error("[brand-vision] no/invalid JSON:", raw.slice(0, 200));
     }
-
-    const parsed = JSON.parse(jsonMatch[0]) as VisionBrandColors;
-    const hex = /^#[0-9a-f]{6}$/i;
-    if (
-      !hex.test(parsed.primary) ||
-      !hex.test(parsed.background) ||
-      !hex.test(parsed.text)
-    ) {
-      console.error("[brand-vision] bad hex in response:", parsed);
-      return null;
-    }
-    // Normalize to lowercase
-    parsed.primary = parsed.primary.toLowerCase();
-    parsed.secondary = parsed.secondary?.toLowerCase() || parsed.primary;
-    parsed.accent = parsed.accent?.toLowerCase() || parsed.primary;
-    parsed.background = parsed.background.toLowerCase();
-    parsed.text = parsed.text.toLowerCase();
     return parsed;
   } catch (err) {
     console.error("[brand-vision] API call failed", err);
@@ -148,7 +174,8 @@ HARD RULES:
  * Returns null if the URL can't be fetched or Claude rejects it.
  */
 export async function extractBrandColorsFromUrl(
-  imageUrl: string
+  imageUrl: string,
+  opts: { cheap?: boolean } = {},
 ): Promise<VisionBrandColors | null> {
   let buffer: Buffer;
   let mediaType = "image/png";
@@ -186,6 +213,16 @@ export async function extractBrandColorsFromUrl(
 6-digit lowercase hex. No prose. If monochrome, return black/white honestly.`;
 
   try {
+    if (opts.cheap) {
+      const raw = await chatVision({
+        base64: buffer.toString("base64"),
+        mediaType,
+        prompt,
+        maxTokens: 300,
+      });
+      return parseVisionJson(raw);
+    }
+
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 300,
@@ -208,22 +245,7 @@ export async function extractBrandColorsFromUrl(
     });
     const raw =
       message.content[0].type === "text" ? message.content[0].text : "";
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]) as VisionBrandColors;
-    const hex = /^#[0-9a-f]{6}$/i;
-    if (
-      !hex.test(parsed.primary) ||
-      !hex.test(parsed.background) ||
-      !hex.test(parsed.text)
-    )
-      return null;
-    parsed.primary = parsed.primary.toLowerCase();
-    parsed.secondary = parsed.secondary?.toLowerCase() || parsed.primary;
-    parsed.accent = parsed.accent?.toLowerCase() || parsed.primary;
-    parsed.background = parsed.background.toLowerCase();
-    parsed.text = parsed.text.toLowerCase();
-    return parsed;
+    return parseVisionJson(raw);
   } catch (err) {
     console.error("[brand-vision] URL-based vision failed:", err);
     return null;

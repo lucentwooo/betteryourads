@@ -9,7 +9,7 @@ import {
 } from "../ai/brand-vision";
 import { scrapeMetaAdLibrary } from "../scraper/meta-ad-scraper";
 import { generateBrandDosAndDonts } from "../ai/diagnosis";
-import { runResearcher } from "../agents/researcher";
+import { runResearcher, runResearcherCheap } from "../agents/researcher";
 import { runStrategist } from "../agents/strategist";
 import { runCreativeDirector } from "../agents/creative-director";
 import type { BrandProfile, CompetitorData, DiagnosisResult, Job, VoiceOfCustomer } from "../types";
@@ -183,28 +183,14 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   );
 
   await setStatus(jobId, "extracting-brand");
-  if (isCheapTest(job)) {
-    const brandProfile: BrandProfile = {
-      ...DEFAULT_BRAND,
-      dosAndDonts: {
-        do: ["Use the captured website context and plain product-specific language."],
-        dont: ["Do not spend Anthropic credits on brand vision during cheap progression tests."],
-      },
-    };
-    await updateJob(jobId, { brandProfile });
-    await addProgress(
-      jobId,
-      "Brand skipped",
-      "Cheap test mode: using neutral brand profile to avoid Anthropic vision/text calls"
-    );
-    await setStatus(jobId, "scraping-ads");
-    return;
-  }
+  const cheap = isCheapTest(job);
 
   await addProgress(
     jobId,
     "Extracting brand identity",
-    screenshotRes?.localScreenshotPath
+    cheap
+      ? "Cheap mode — reading brand colors via Gemini Flash..."
+      : screenshotRes?.localScreenshotPath
       ? "Reading brand colors from website screenshot..."
       : pageRes?.ogImage
       ? "Screenshot unavailable — reading brand colors from og:image..."
@@ -214,10 +200,13 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   let profile: Omit<BrandProfile, "dosAndDonts"> = DEFAULT_BRAND;
   if (screenshotRes?.localScreenshotPath || pageRes?.ogImage) {
     const vision = screenshotRes?.localScreenshotPath
-      ? await extractBrandColorsFromScreenshot(screenshotRes.localScreenshotPath).catch(
-          () => null
-        )
-      : await extractBrandColorsFromUrl(pageRes!.ogImage!).catch(() => null);
+      ? await extractBrandColorsFromScreenshot(
+          screenshotRes.localScreenshotPath,
+          { cheap },
+        ).catch(() => null)
+      : await extractBrandColorsFromUrl(pageRes!.ogImage!, { cheap }).catch(
+          () => null,
+        );
     if (vision) {
       profile = {
         ...DEFAULT_BRAND,
@@ -243,12 +232,12 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
     }
   }
 
-  const dosAndDonts = await generateBrandDosAndDonts(profile, websiteContent).catch(
-    (err) => {
-      console.error("[pipeline] dosAndDonts failed:", err);
-      return { do: [], dont: [] };
-    }
-  );
+  const dosAndDonts = await generateBrandDosAndDonts(profile, websiteContent, {
+    cheap,
+  }).catch((err) => {
+    console.error("[pipeline] dosAndDonts failed:", err);
+    return { do: [], dont: [] };
+  });
 
   const brandProfile: BrandProfile = { ...profile, dosAndDonts };
 
@@ -370,22 +359,18 @@ async function stageResearcher(jobId: string): Promise<void> {
   const job = await getJob(jobId);
   if (!job) return;
 
-  if (isCheapTest(job)) {
-    const voc = cheapModeVoc(job.input.companyName);
-    await updateJob(jobId, { voc });
-    await addProgress(
-      jobId,
-      "Researcher skipped",
-      "Cheap test mode: skipping Anthropic web search and using lightweight placeholder VoC",
-      { agent: "researcher", qaOutcome: "pass" }
-    );
-    await setStatus(jobId, "analyzing");
-    return;
-  }
+  const cheap = isCheapTest(job);
+  await addProgress(
+    jobId,
+    "Researcher agent",
+    cheap
+      ? "Hunting customer quotes via Perplexity Sonar (cheap mode)"
+      : "Hunting real customer quotes across Reddit + reviews",
+    { agent: "researcher" },
+  );
 
-  await addProgress(jobId, "Researcher agent", "Hunting real customer quotes across Reddit + reviews", { agent: "researcher" });
-
-  const voc = await runResearcher(job.input, async (msg) => {
+  const runner = cheap ? runResearcherCheap : runResearcher;
+  const voc = await runner(job.input, async (msg) => {
     const outcome = msg.includes("pass")
       ? "pass"
       : msg.includes("retry")
@@ -394,6 +379,14 @@ async function stageResearcher(jobId: string): Promise<void> {
       ? "escalate"
       : undefined;
     await addProgress(jobId, "Researcher", msg, { agent: "researcher", qaOutcome: outcome });
+  }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[pipeline] researcher failed:", err);
+    await addProgress(jobId, "Researcher fallback", msg, {
+      agent: "researcher",
+      qaOutcome: "escalate",
+    });
+    return cheapModeVoc(job.input.companyName);
   });
 
   await updateJob(jobId, { voc });

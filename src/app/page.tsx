@@ -62,7 +62,7 @@ export default function HomePage() {
   async function handleInitialSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName || !companyUrl) return;
-    if (demoMode || cheapMode) {
+    if (demoMode) {
       setStep("competitors");
       return;
     }
@@ -72,7 +72,7 @@ export default function HomePage() {
       const res = await fetch("/api/suggest-competitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyName, companyUrl }),
+        body: JSON.stringify({ companyName, companyUrl, cheap: cheapMode }),
       });
       const data = await res.json();
       setSuggestedCompetitors(data.competitors || []);

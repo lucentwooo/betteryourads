@@ -9,7 +9,7 @@ export const maxDuration = 30;
 
 export async function POST(request: Request) {
   try {
-    const { companyName, companyUrl } = await request.json();
+    const { companyName, companyUrl, cheap } = await request.json();
 
     if (!companyName || !companyUrl) {
       return NextResponse.json(
@@ -36,7 +36,8 @@ export async function POST(request: Request) {
     const competitors = await suggestCompetitors(
       companyName,
       url,
-      websiteContent || `Company called ${companyName} at ${url}`
+      websiteContent || `Company called ${companyName} at ${url}`,
+      { cheap: Boolean(cheap) },
     );
 
     return NextResponse.json({ competitors });

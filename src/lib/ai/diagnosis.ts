@@ -6,6 +6,7 @@ import {
   buildCompetitorSuggestionPrompt,
   buildBrandDosAndDontsPrompt,
 } from "./prompts";
+import { chatText } from "./openrouter";
 
 const client = new Anthropic();
 
@@ -30,17 +31,21 @@ export async function runDiagnosis(params: {
   competitors: CompetitorData[];
   notes?: string;
   adContentDescription?: string;
+  cheap?: boolean;
 }): Promise<DiagnosisResult> {
   const prompt = buildDiagnosisPrompt(params);
 
-  const message = await client.messages.create({
-    model: MODEL_CHEAP,
-    max_tokens: 8000,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const raw =
-    message.content[0].type === "text" ? message.content[0].text : "";
+  let raw: string;
+  if (params.cheap) {
+    raw = await chatText(prompt, { maxTokens: 6000 });
+  } else {
+    const message = await client.messages.create({
+      model: MODEL_CHEAP,
+      max_tokens: 8000,
+      messages: [{ role: "user", content: prompt }],
+    });
+    raw = message.content[0].type === "text" ? message.content[0].text : "";
+  }
 
   return parseDiagnosisResponse(raw);
 }
@@ -88,7 +93,8 @@ function parseDiagnosisResponse(raw: string): DiagnosisResult {
 export async function suggestCompetitors(
   companyName: string,
   companyUrl: string,
-  websiteContent: string
+  websiteContent: string,
+  opts: { cheap?: boolean } = {},
 ): Promise<{ name: string; searchTerm: string; category?: string }[]> {
   // Step 1: Categorize the business + detect locality
   const categoryPrompt = buildCategoryPrompt(
@@ -96,15 +102,20 @@ export async function suggestCompetitors(
     companyUrl,
     websiteContent
   );
-  const categoryMessage = await client.messages.create({
-    model: MODEL_CHEAP,
-    max_tokens: 200,
-    messages: [{ role: "user", content: categoryPrompt }],
-  });
-  const categoryRaw =
-    categoryMessage.content[0].type === "text"
-      ? categoryMessage.content[0].text.trim()
-      : "";
+  let categoryRaw: string;
+  if (opts.cheap) {
+    categoryRaw = (await chatText(categoryPrompt, { maxTokens: 200 })).trim();
+  } else {
+    const categoryMessage = await client.messages.create({
+      model: MODEL_CHEAP,
+      max_tokens: 200,
+      messages: [{ role: "user", content: categoryPrompt }],
+    });
+    categoryRaw =
+      categoryMessage.content[0].type === "text"
+        ? categoryMessage.content[0].text.trim()
+        : "";
+  }
 
   let category = "";
   let isLocal = false;
@@ -132,14 +143,18 @@ export async function suggestCompetitors(
     isLocal,
     city
   );
-  const message = await client.messages.create({
-    model: MODEL_CHEAP,
-    max_tokens: 500,
-    messages: [{ role: "user", content: competitorsPrompt }],
-  });
-
-  const text =
-    message.content[0].type === "text" ? message.content[0].text : "[]";
+  let text: string;
+  if (opts.cheap) {
+    text = await chatText(competitorsPrompt, { maxTokens: 500 });
+  } else {
+    const message = await client.messages.create({
+      model: MODEL_CHEAP,
+      max_tokens: 500,
+      messages: [{ role: "user", content: competitorsPrompt }],
+    });
+    text =
+      message.content[0].type === "text" ? message.content[0].text : "[]";
+  }
 
   try {
     const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -156,18 +171,23 @@ export async function suggestCompetitors(
 
 export async function generateBrandDosAndDonts(
   brandProfile: Omit<BrandProfile, "dosAndDonts">,
-  websiteContent: string
+  websiteContent: string,
+  opts: { cheap?: boolean } = {},
 ): Promise<{ do: string[]; dont: string[] }> {
   const prompt = buildBrandDosAndDontsPrompt(brandProfile, websiteContent);
 
-  const message = await client.messages.create({
-    model: MODEL_CHEAP,
-    max_tokens: 500,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text =
-    message.content[0].type === "text" ? message.content[0].text : "{}";
+  let text: string;
+  if (opts.cheap) {
+    text = await chatText(prompt, { maxTokens: 500 });
+  } else {
+    const message = await client.messages.create({
+      model: MODEL_CHEAP,
+      max_tokens: 500,
+      messages: [{ role: "user", content: prompt }],
+    });
+    text =
+      message.content[0].type === "text" ? message.content[0].text : "{}";
+  }
 
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);

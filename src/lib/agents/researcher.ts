@@ -1,5 +1,182 @@
 import type { VoiceOfCustomer, VocSnippet, VocPattern, VocSource, AnalysisInput } from "../types";
 import { client, MODEL, extractJson, runWithQA, judgeWithRubric, findBannedPhrases } from "./shared";
+import { perplexitySearch, chatText } from "../ai/openrouter";
+
+function classifySourceUrl(url: string): VocSource {
+  const lower = (url || "").toLowerCase();
+  if (lower.includes("reddit.com")) return "reddit";
+  if (lower.includes("g2.com")) return "g2";
+  if (lower.includes("trustpilot.com")) return "trustpilot";
+  if (lower.includes("capterra.com")) return "capterra";
+  if (lower.includes("youtube.com") || lower.includes("youtu.be"))
+    return "youtube";
+  if (lower.includes("blog") || lower.includes("medium.com")) return "blog";
+  if (lower.includes("forum") || lower.includes("community.")) return "forum";
+  return "other";
+}
+
+function emptyCheapVoc(companyName: string, reason: string): VoiceOfCustomer {
+  return {
+    sources: { redditSubs: [], reviewSites: [], forums: [] },
+    snippets: [],
+    languagePatterns: [],
+    painPoints: [],
+    desires: [],
+    objections: [],
+    reportMd: `# VoC for ${companyName}\n\n_${reason}_`,
+    generatedAt: new Date().toISOString(),
+    qa: {
+      pass: false,
+      score: 0,
+      issues: [reason],
+      retries: 0,
+      feedbackForRetry: reason,
+    },
+  };
+}
+
+/**
+ * Cheap-mode VoC research using Perplexity Sonar (built-in web search) +
+ * DeepSeek for structuring into our schema. ~$0.01 total per call vs
+ * ~$0.05+ for the full Anthropic web_search flow.
+ */
+export async function runResearcherCheap(
+  input: AnalysisInput,
+  onAgentProgress?: (msg: string) => Promise<void> | void,
+): Promise<VoiceOfCustomer> {
+  await onAgentProgress?.("Researcher (cheap): searching Reddit + reviews via Perplexity Sonar");
+
+  const searchPrompt = `Find real customer voice for: "${input.companyName}" (${input.companyUrl}).
+${input.productDescription ? `Product: ${input.productDescription}` : ""}
+${input.icpDescription ? `ICP: ${input.icpDescription}` : ""}
+
+Search Reddit, G2, Trustpilot, Capterra, and niche forums. Pull 8-12 REAL direct quotes from customers — pain points, objections, desires, and natural language they use. Include the URL where each quote lives.
+
+Format each as:
+"[exact customer quote]" — [source URL]
+
+Group by: PAIN POINTS / OBJECTIONS / DESIRES / LANGUAGE PATTERNS.`;
+
+  let searchText = "";
+  let citations: string[] = [];
+  try {
+    const result = await perplexitySearch({
+      prompt: searchPrompt,
+      maxTokens: 2500,
+      timeoutMs: 90_000,
+    });
+    searchText = result.text;
+    citations = result.citations;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await onAgentProgress?.(`Researcher (cheap) escalate: Perplexity failed — ${msg}`);
+    return emptyCheapVoc(input.companyName, `Perplexity search failed: ${msg}`);
+  }
+
+  if (!searchText || searchText.length < 100) {
+    return emptyCheapVoc(input.companyName, "Perplexity returned empty/thin result");
+  }
+
+  await onAgentProgress?.("Researcher (cheap): structuring VoC via DeepSeek");
+
+  const structurePrompt = `You are given raw web research output. Convert to a structured Voice of Customer JSON.
+
+RAW RESEARCH:
+${searchText}
+
+CITATION URLS (in order of appearance):
+${citations.map((c, i) => `[${i}] ${c}`).join("\n")}
+
+Return ONLY this JSON shape (no prose, no markdown fences):
+{
+  "snippets": [
+    { "url": "https://...", "sourceLabel": "r/marketing", "quote": "exact customer words" }
+  ],
+  "painPoints":     [{ "name": "short label", "description": "1 sentence", "snippetRefs": [0,1] }],
+  "desires":        [{ "name": "...", "description": "...", "snippetRefs": [...] }],
+  "objections":     [{ "name": "...", "description": "...", "snippetRefs": [...] }],
+  "languagePatterns": [{ "name": "phrase pattern", "description": "how customers say it", "snippetRefs": [...] }]
+}
+
+Rules:
+- Include 6-12 snippets, real direct quotes only
+- snippetRefs are indices into the snippets array
+- Use citation URLs from above when possible
+- 2-4 items per category minimum
+- If category has no real evidence, return [] for it`;
+
+  let structured: {
+    snippets?: Array<{ url: string; sourceLabel?: string; quote: string }>;
+    painPoints?: VocPattern[];
+    desires?: VocPattern[];
+    objections?: VocPattern[];
+    languagePatterns?: VocPattern[];
+  } = {};
+  try {
+    const text = await chatText(structurePrompt, { maxTokens: 3000 });
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) structured = JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await onAgentProgress?.(`Researcher (cheap) escalate: structuring failed — ${msg}`);
+    return emptyCheapVoc(input.companyName, `Structuring failed: ${msg}`);
+  }
+
+  const snippets: VocSnippet[] = (structured.snippets || []).map((s) => ({
+    source: classifySourceUrl(s.url),
+    url: s.url || "",
+    sourceLabel: s.sourceLabel || s.url || "web",
+    quote: s.quote || "",
+  }));
+
+  const redditSubs = Array.from(
+    new Set(
+      snippets
+        .filter((s) => s.source === "reddit")
+        .map((s) => {
+          const m = s.url.match(/reddit\.com\/r\/([^/]+)/i);
+          return m ? m[1] : "";
+        })
+        .filter(Boolean),
+    ),
+  );
+  const reviewSites = Array.from(
+    new Set(
+      snippets
+        .filter((s) => ["g2", "trustpilot", "capterra"].includes(s.source))
+        .map((s) => s.url),
+    ),
+  );
+  const forums = Array.from(
+    new Set(
+      snippets.filter((s) => s.source === "forum").map((s) => s.url),
+    ),
+  );
+
+  const voc: VoiceOfCustomer = {
+    sources: { redditSubs, reviewSites, forums },
+    snippets,
+    languagePatterns: structured.languagePatterns || [],
+    painPoints: structured.painPoints || [],
+    desires: structured.desires || [],
+    objections: structured.objections || [],
+    reportMd: `# Voice of Customer — ${input.companyName} (cheap mode)\n\nResearched via Perplexity Sonar + DeepSeek structuring.\n\n${snippets.length} snippets across ${snippets.map((s) => s.source).filter((v, i, a) => a.indexOf(v) === i).length} source types.\n\n${searchText.slice(0, 1500)}`,
+    generatedAt: new Date().toISOString(),
+    qa: {
+      pass: snippets.length >= 4,
+      score: Math.min(10, snippets.length),
+      issues: snippets.length < 4 ? ["Thin snippet coverage"] : [],
+      retries: 0,
+      feedbackForRetry: snippets.length < 4 ? "Re-run Perplexity with more specific niche query" : "",
+    },
+  };
+
+  await onAgentProgress?.(
+    `Researcher (cheap) pass: ${snippets.length} snippets, ${voc.painPoints.length} pain points`,
+  );
+
+  return voc;
+}
 
 /**
  * Agent 1 — Researcher.
