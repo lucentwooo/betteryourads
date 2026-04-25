@@ -1,8 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type {
+  MessageCreateParamsNonStreaming,
+  MessageParam,
+} from "@anthropic-ai/sdk/resources/messages";
 import type { QAResult } from "../types";
 
 export const MODEL = "claude-sonnet-4-20250514";
+export const OPENROUTER_MODEL =
+  process.env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3.1";
 export const client = new Anthropic();
+export type ModelMode = "full" | "cheap";
+
+type TextMessage = {
+  content: [{ type: "text"; text: string }];
+};
 
 export const HARD_BAN_PHRASES = [
   "it's not", // triggers "it's not X, it's Y" banned structure
@@ -84,6 +95,82 @@ export async function runWithQA<T>(contract: QAContract<T>): Promise<QAOutcome<T
   return { output: lastOutput as T, qa: lastQa as QAResult, escalated: true };
 }
 
+function flattenMessageContent(content: MessageParam["content"]): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((block) => {
+      if (block.type === "text") return block.text;
+      return `[${block.type} content omitted in cheap model mode]`;
+    })
+    .join("\n");
+}
+
+function flattenSystem(system: MessageCreateParamsNonStreaming["system"]): string | undefined {
+  if (!system) return undefined;
+  if (typeof system === "string") return system;
+  return system
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function createTextMessage(
+  params: MessageCreateParamsNonStreaming,
+  options?: { timeout?: number },
+  mode: ModelMode = "full",
+): Promise<TextMessage> {
+  if (mode !== "cheap") {
+    return client.messages.create(params, options) as unknown as Promise<TextMessage>;
+  }
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error("OPENROUTER_API_KEY is missing. Add it in Vercel to use cheap test mode.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options?.timeout ?? 90_000);
+  try {
+    const system = flattenSystem(params.system);
+    const messages = [
+      ...(system ? [{ role: "system", content: system }] : []),
+      ...params.messages.map((message) => ({
+        role: message.role,
+        content: flattenMessageContent(message.content),
+      })),
+    ];
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://betteryourads.com",
+        "X-Title": "Better Your Ads",
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages,
+        max_tokens: params.max_tokens,
+        temperature: params.temperature,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`OpenRouter ${response.status}: ${body.slice(0, 300)}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const text = data.choices?.[0]?.message?.content || "";
+    return { content: [{ type: "text", text }] };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /** Ask Claude to judge output against a rubric. Returns QA verdict. */
 export async function judgeWithRubric(params: {
   systemPrompt: string;
@@ -92,6 +179,7 @@ export async function judgeWithRubric(params: {
   rubric: string[];
   /** Min score required on every dimension to pass. */
   passThreshold: number;
+  modelMode?: ModelMode;
 }): Promise<QAResult> {
   const schemaHint = params.rubric
     .map((r) => `  "${r}": <1-10>`)
@@ -112,12 +200,12 @@ ${schemaHint}
 
 A pass requires EVERY dimension to score >= ${params.passThreshold}. Be strict. Favor a fail over a borderline pass.`;
 
-  const msg = await client.messages.create({
+  const msg = await createTextMessage({
     model: MODEL,
     max_tokens: 2000,
     system: params.systemPrompt,
     messages: [{ role: "user", content: full }],
-  }, { timeout: 60_000 });
+  }, { timeout: 60_000 }, params.modelMode);
 
   const text = msg.content[0].type === "text" ? msg.content[0].text : "";
   const jsonMatch = text.match(/\{[\s\S]*\}/);

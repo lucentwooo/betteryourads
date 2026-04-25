@@ -18,6 +18,7 @@ export default function HomePage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("input");
   const [demoMode, setDemoMode] = useState(false);
+  const [cheapMode, setCheapMode] = useState(false);
 
   const [companyName, setCompanyName] = useState("");
   const [companyUrl, setCompanyUrl] = useState("");
@@ -40,6 +41,7 @@ export default function HomePage() {
       params.get("demo") === "1" ||
         process.env.NEXT_PUBLIC_DEMO_MODE === "1"
     );
+    setCheapMode(params.get("cheap") === "1");
   }, []);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function HomePage() {
   async function handleInitialSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName || !companyUrl) return;
-    if (demoMode) {
+    if (demoMode || cheapMode) {
       setStep("competitors");
       return;
     }
@@ -109,7 +111,10 @@ export default function HomePage() {
           icpDescription: icpDescription || undefined,
           notes: notes || undefined,
           adContentDescription: adContentDescription || undefined,
-          competitors: suggestedCompetitors.map((c) => c.name),
+          competitors: cheapMode
+            ? suggestedCompetitors.slice(0, 1).map((c) => c.name)
+            : suggestedCompetitors.map((c) => c.name),
+          testMode: cheapMode ? "cheap" : undefined,
         }),
       });
       const data = await res.json();
@@ -149,6 +154,7 @@ export default function HomePage() {
         setCustomCompetitor={setCustomCompetitor}
         apiError={apiError}
         demoMode={demoMode}
+        cheapMode={cheapMode}
         onInitialSubmit={handleInitialSubmit}
         onAddCompetitor={addCompetitor}
         onRemoveCompetitor={removeCompetitor}
@@ -220,6 +226,7 @@ type HeroProps = {
   customCompetitor: string; setCustomCompetitor: (v: string) => void;
   apiError: string | null;
   demoMode: boolean;
+  cheapMode: boolean;
   onInitialSubmit: (e: React.FormEvent) => void;
   onAddCompetitor: () => void;
   onRemoveCompetitor: (i: number) => void;
@@ -513,7 +520,7 @@ function CompetitorsStep(p: HeroProps) {
                 </>
               ) : (
                 <>
-                  {p.demoMode ? "Run demo analysis" : "Run full analysis"}
+                  {p.demoMode ? "Run demo analysis" : p.cheapMode ? "Run cheap test" : "Run full analysis"}
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}

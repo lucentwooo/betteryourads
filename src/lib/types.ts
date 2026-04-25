@@ -205,6 +205,7 @@ export interface AnalysisInput {
   notes?: string;
   adContentDescription?: string;
   uploadedScreenshots?: string[];
+  testMode?: "cheap";
 }
 
 export type JobStatus =

@@ -1,5 +1,5 @@
 import type { Concept, DiagnosisResult, VoiceOfCustomer, AwarenessStage } from "../types";
-import { client, MODEL, runWithQA, judgeWithRubric, extractJson, findBannedPhrases } from "./shared";
+import { MODEL, runWithQA, judgeWithRubric, extractJson, findBannedPhrases, createTextMessage, type ModelMode } from "./shared";
 
 /**
  * Agent 3 — Creative Director (Concept Architect).
@@ -17,6 +17,7 @@ export async function runCreativeDirector(
     voc?: VoiceOfCustomer;
     companyName: string;
     icpDescription?: string;
+    modelMode?: ModelMode;
   },
   onAgentProgress?: (msg: string) => Promise<void> | void,
 ): Promise<Concept[]> {
@@ -26,14 +27,14 @@ export async function runCreativeDirector(
     generatorName: "CreativeDirector",
     qaName: "ConceptQA",
     generate: async (feedback) => {
-      const msg = await client.messages.create({
+      const msg = await createTextMessage({
         model: MODEL,
         max_tokens: 6000,
         system: conceptSystemPrompt,
         messages: [
           { role: "user", content: buildConceptUserPrompt(params, feedback) },
         ],
-      });
+      }, undefined, params.modelMode);
       const text = msg.content[0].type === "text" ? msg.content[0].text : "";
       const parsed = extractJson<{ concepts: ConceptInput[] }>(text);
       if (!parsed?.concepts) return [];
@@ -50,7 +51,7 @@ export async function runCreativeDirector(
         approved: "pending" as const,
       }));
     },
-    qa: async (concepts) => conceptQA(concepts, params.voc),
+    qa: async (concepts) => conceptQA(concepts, params.voc, params.modelMode),
     onAttempt: async (attempt, outcome, q) => {
       await onAgentProgress?.(
         `Concept QA ${outcome} (attempt ${attempt + 1}, score ${q.score})`,
@@ -77,7 +78,7 @@ interface ConceptInput {
 
 /* ───────── QA ───────── */
 
-async function conceptQA(concepts: Concept[], voc?: VoiceOfCustomer) {
+async function conceptQA(concepts: Concept[], voc?: VoiceOfCustomer, modelMode?: ModelMode) {
   const hardFails: string[] = [];
 
   if (concepts.length < 6) hardFails.push(`Only ${concepts.length} concepts (need >= 6)`);
@@ -160,6 +161,7 @@ ${concepts
   .join("\n\n")}`,
     rubric: ["specificity", "evidenceGrounding", "testability", "stageDistribution", "distinctness"],
     passThreshold: 7,
+    modelMode,
   });
 }
 

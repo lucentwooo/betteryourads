@@ -12,7 +12,7 @@ import { generateBrandDosAndDonts } from "../ai/diagnosis";
 import { runResearcher } from "../agents/researcher";
 import { runStrategist } from "../agents/strategist";
 import { runCreativeDirector } from "../agents/creative-director";
-import type { BrandProfile, CompetitorData, DiagnosisResult, Job } from "../types";
+import type { BrandProfile, CompetitorData, DiagnosisResult, Job, VoiceOfCustomer } from "../types";
 
 // Hard cap for any single Meta Ad Library scrape. Chromium cold-launch
 // in serverless can hang indefinitely on the tarball download; without a
@@ -63,6 +63,58 @@ const DEFAULT_BRAND: Omit<BrandProfile, "dosAndDonts"> = {
   },
   tone: "confident, clear, customer-focused",
 };
+
+function isCheapTest(job: Job): boolean {
+  return job.input.testMode === "cheap";
+}
+
+function cheapModeVoc(companyName: string): VoiceOfCustomer {
+  return {
+    sources: {
+      redditSubs: [],
+      reviewSites: [],
+      forums: [],
+    },
+    snippets: [],
+    languagePatterns: [
+      {
+        name: "Cheap test mode placeholder",
+        description: "VoC web search was skipped so the production agents page can be tested without Anthropic web-search spend.",
+        snippetRefs: [],
+      },
+    ],
+    painPoints: [
+      {
+        name: "Need faster creative clarity",
+        description: `${companyName} buyers likely need clearer reasons to care, compare, and act.`,
+        snippetRefs: [],
+      },
+    ],
+    desires: [
+      {
+        name: "Lower-risk decision",
+        description: "Customers want proof, specificity, and a confident next step before they commit.",
+        snippetRefs: [],
+      },
+    ],
+    objections: [
+      {
+        name: "Trust and differentiation uncertainty",
+        description: "Prospects may need clearer evidence for why this is better than alternatives.",
+        snippetRefs: [],
+      },
+    ],
+    reportMd: "# Cheap test mode VoC\n\nReal VoC research skipped to save API credits during progression testing.",
+    generatedAt: new Date().toISOString(),
+    qa: {
+      pass: true,
+      score: 7,
+      issues: ["Cheap test mode skips live VoC web search."],
+      feedbackForRetry: "Run the full mode when ready for production-quality customer quotes.",
+      retries: 0,
+    },
+  };
+}
 
 // The full pipeline exceeds the 300s Hobby function cap if run in one
 // invocation. We split it into stages; each stage runs in its own
@@ -300,6 +352,19 @@ async function stageResearcher(jobId: string): Promise<void> {
   const job = await getJob(jobId);
   if (!job) return;
 
+  if (isCheapTest(job)) {
+    const voc = cheapModeVoc(job.input.companyName);
+    await updateJob(jobId, { voc });
+    await addProgress(
+      jobId,
+      "Researcher skipped",
+      "Cheap test mode: skipping Anthropic web search and using lightweight placeholder VoC",
+      { agent: "researcher", qaOutcome: "pass" }
+    );
+    await setStatus(jobId, "analyzing");
+    return;
+  }
+
   await addProgress(jobId, "Researcher agent", "Hunting real customer quotes across Reddit + reviews", { agent: "researcher" });
 
   const voc = await runResearcher(job.input, async (msg) => {
@@ -415,6 +480,7 @@ async function stageStrategist(jobId: string): Promise<void> {
       notes: job.input.notes,
       adContentDescription: job.input.adContentDescription,
       voc: job.voc,
+      modelMode: isCheapTest(job) ? "cheap" : "full",
     }, async (msg) => {
       const outcome = msg.includes("pass")
         ? "pass"
@@ -454,6 +520,7 @@ async function stageCreativeDirector(jobId: string): Promise<void> {
     voc: job.voc,
     companyName: job.input.companyName,
     icpDescription: job.input.icpDescription,
+    modelMode: isCheapTest(job) ? "cheap" : "full",
   }, async (msg) => {
     const outcome = msg.includes("pass")
       ? "pass"
