@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getJob, updateJob } from "@/lib/jobs/manager";
-import { MOCK_JOB } from "@/lib/mock-data";
+import { isMockProgressJob, makeMockProgressJob, MOCK_JOB } from "@/lib/mock-data";
 import type { Concept } from "@/lib/types";
 
 // Polled every 2s by the /analyze progress page. MUST NOT cache — a cached
@@ -27,6 +27,9 @@ export async function GET(
 
   if (jobId === "mock-001") {
     return noStore(MOCK_JOB);
+  }
+  if (isMockProgressJob(jobId)) {
+    return noStore(makeMockProgressJob(jobId));
   }
 
   const job = await getJob(jobId);

@@ -25,6 +25,7 @@ const SECTIONS: { id: string; num: string; label: string }[] = [
 export default function AnalyzePage() {
   const params = useParams();
   const jobId = params.jobId as string;
+  const isMockJob = jobId.startsWith("mock-");
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string>("brand");
@@ -72,6 +73,7 @@ export default function AnalyzePage() {
       job.status === "complete" ||
       job.status === "awaiting-approval" ||
       job.status === "error" ||
+      isMockJob ||
       advancingRef.current
     ) {
       return;
@@ -124,7 +126,7 @@ export default function AnalyzePage() {
     return () => {
       cancelled = true;
     };
-  }, [fetchJob, job, jobId]);
+  }, [fetchJob, isMockJob, job, jobId]);
 
   // Scroll reveals + active-section tracking. Runs once the report renders.
   useEffect(() => {
