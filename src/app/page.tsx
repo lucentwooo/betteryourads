@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowUpRight, Check, Loader2, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ interface CompetitorSuggestion {
 export default function HomePage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("input");
+  const [demoMode, setDemoMode] = useState(false);
 
   const [companyName, setCompanyName] = useState("");
   const [companyUrl, setCompanyUrl] = useState("");
@@ -33,9 +34,36 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setDemoMode(
+      params.get("demo") === "1" ||
+        process.env.NEXT_PUBLIC_DEMO_MODE === "1"
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!demoMode) return;
+    setCompanyName((v) => v || "Tally");
+    setCompanyUrl((v) => v || "https://tally.so");
+    setSuggestedCompetitors((v) =>
+      v.length
+        ? v
+        : [
+            { name: "Typeform", searchTerm: "Typeform" },
+            { name: "Jotform", searchTerm: "Jotform" },
+            { name: "Google Forms", searchTerm: "Google Forms" },
+          ]
+    );
+  }, [demoMode]);
+
   async function handleInitialSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName || !companyUrl) return;
+    if (demoMode) {
+      setStep("competitors");
+      return;
+    }
     setLoadingCompetitors(true);
     setStep("competitors");
     try {
@@ -70,7 +98,7 @@ export default function HomePage() {
     setSubmitting(true);
     setStep("submitting");
     try {
-      const res = await fetch("/api/analyze", {
+      const res = await fetch(demoMode ? "/api/mock-analyze" : "/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -120,6 +148,7 @@ export default function HomePage() {
         customCompetitor={customCompetitor}
         setCustomCompetitor={setCustomCompetitor}
         apiError={apiError}
+        demoMode={demoMode}
         onInitialSubmit={handleInitialSubmit}
         onAddCompetitor={addCompetitor}
         onRemoveCompetitor={removeCompetitor}
@@ -190,6 +219,7 @@ type HeroProps = {
   suggestedCompetitors: CompetitorSuggestion[];
   customCompetitor: string; setCustomCompetitor: (v: string) => void;
   apiError: string | null;
+  demoMode: boolean;
   onInitialSubmit: (e: React.FormEvent) => void;
   onAddCompetitor: () => void;
   onRemoveCompetitor: (i: number) => void;
@@ -483,7 +513,7 @@ function CompetitorsStep(p: HeroProps) {
                 </>
               ) : (
                 <>
-                  Run full analysis
+                  {p.demoMode ? "Run demo analysis" : "Run full analysis"}
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}
