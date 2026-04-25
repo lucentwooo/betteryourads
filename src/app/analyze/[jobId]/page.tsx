@@ -28,6 +28,7 @@ export default function AnalyzePage() {
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string>("brand");
+  const [now, setNow] = useState(() => Date.now());
   const rootRef = useRef<HTMLElement | null>(null);
   const advancingRef = useRef(false);
 
@@ -47,6 +48,7 @@ export default function AnalyzePage() {
 
   useEffect(() => {
     fetchJob();
+    const clock = setInterval(() => setNow(Date.now()), 1000);
     const interval = setInterval(() => {
       if (
         job?.status === "complete" ||
@@ -58,7 +60,10 @@ export default function AnalyzePage() {
       }
       fetchJob();
     }, 2000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(clock);
+      clearInterval(interval);
+    };
   }, [fetchJob, job?.status]);
 
   useEffect(() => {
@@ -187,9 +192,11 @@ export default function AnalyzePage() {
       <main className="min-h-screen bg-paper">
         <div className="mx-auto max-w-2xl px-4">
           <ProgressTracker
+            jobId={job.id}
             status={job.status}
             progress={job.progress}
             error={job.error}
+            now={now}
           />
         </div>
       </main>
