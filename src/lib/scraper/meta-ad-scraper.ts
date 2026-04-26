@@ -567,12 +567,11 @@ async function scrapeMetaAdLibraryInner(
     }
 
     // Strategy B: page-name search. Returns Meta Page tiles, each labelled
-    // with the page name and its active ad count (e.g. "EatClub · 210 ads").
-    // This is Meta's intended way to look up "how many ads is this brand
-    // running" — and it works without needing the numeric page_id.
+    // with the page name and its active ad count.
     if (brandCount === 0) {
       try {
         const pageSearchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${encodeURIComponent(companyName)}&search_type=page`;
+        console.log(`[meta-ad-scraper] page-search URL: ${pageSearchUrl}`);
         await page.goto(pageSearchUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
         await page
           .waitForFunction(
@@ -583,32 +582,44 @@ async function scrapeMetaAdLibraryInner(
             { timeout: 10000 },
           )
           .catch(() => {});
-        await delay(1000);
-        brandCount = await page.evaluate((rawName: string) => {
+        await delay(1500);
+        const psResult = await page.evaluate((rawName: string) => {
           const norm = (s: string) =>
             s.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
           const target = norm(rawName);
-          // Walk every visible block of reasonable card size; find one whose
-          // text starts with the brand name and contains "N ads"/"N active ads".
+          const bodyText = document.body.innerText || "";
+          const allCounts: { text: string; count: number }[] = [];
           const blocks = Array.from(document.querySelectorAll("div"));
           for (const b of blocks) {
             const r = (b as HTMLElement).getBoundingClientRect();
             if (r.width < 200 || r.width > 900 || r.height < 60 || r.height > 600) continue;
             const t = (b as HTMLElement).innerText || "";
-            if (t.length > 600) continue;
+            if (t.length > 600 || t.length < 5) continue;
             const tn = norm(t);
             if (!tn.startsWith(target) && !tn.includes(" " + target)) continue;
             const m = t.match(/(\d[\d,]*)\s+(?:active\s+)?ads?\b/i);
-            if (m) return parseInt(m[1].replace(/,/g, ""), 10);
+            if (m) allCounts.push({ text: t.slice(0, 120), count: parseInt(m[1].replace(/,/g, ""), 10) });
           }
-          // Last-resort: first ad count anywhere on the page (the page-search
-          // result list usually has only matching brands).
-          const first = (document.body.innerText || "").match(
-            /(\d[\d,]*)\s+(?:active\s+)?ads?\b/i,
-          );
-          return first ? parseInt(first[1].replace(/,/g, ""), 10) : 0;
+          // First any-tile count match as fallback
+          const first = bodyText.match(/(\d[\d,]*)\s+(?:active\s+)?ads?\b/i);
+          return {
+            matchedTiles: allCounts,
+            firstAnyCount: first ? parseInt(first[1].replace(/,/g, ""), 10) : 0,
+            bodyPreview: bodyText.slice(0, 600),
+            blocksScanned: blocks.length,
+          };
         }, companyName);
-        console.log(`[meta-ad-scraper] page-search count for "${companyName}": ${brandCount}`);
+        // Pick the first matched tile if any, otherwise first any-count.
+        // Cap at 50,000 — Meta sometimes shows truly huge keyword totals on
+        // page-search too (rare); above that, distrust.
+        const picked = psResult.matchedTiles[0]?.count ?? psResult.firstAnyCount;
+        brandCount = picked > 50_000 ? 0 : picked;
+        console.log(
+          `[meta-ad-scraper] page-search "${companyName}" → matchedTiles=${JSON.stringify(psResult.matchedTiles)} firstAnyCount=${psResult.firstAnyCount} blocks=${psResult.blocksScanned} picked=${brandCount}`,
+        );
+        if (brandCount === 0) {
+          console.log(`[meta-ad-scraper] page-search body preview: ${psResult.bodyPreview}`);
+        }
       } catch (e) {
         console.warn(`[meta-ad-scraper] page-search count lookup failed:`, e);
       }
