@@ -148,9 +148,11 @@ async function scrapeMetaAdLibraryInner(
         waitUntil: "domcontentloaded",
         timeout: 15000,
       });
-      // Wait for either the results header ("~N results" / "No ads match") or
-      // a Library ID text node — whichever appears first. Flat sleeps miss
-      // slow loads and waste time on fast ones.
+      // First wait for ANY signal that the page rendered. Then keep waiting
+      // (briefly) specifically for the count header — it usually appears a
+      // beat after the cards. Without this we'd race to read totalCount=0
+      // and fall through to country=ALL where keyword search returns
+      // wildly inflated counts (e.g. 17,000 for a 210-ad brand).
       await page
         .waitForFunction(
           () => {
@@ -164,7 +166,13 @@ async function scrapeMetaAdLibraryInner(
           { timeout: 12000 },
         )
         .catch(() => {});
-      await delay(1500);
+      await page
+        .waitForFunction(
+          () => /~?[\d,]+\s+results?/i.test(document.body.innerText || ""),
+          { timeout: 6000 },
+        )
+        .catch(() => {});
+      await delay(800);
       const result = await page.evaluate(() => {
         const bodyText = document.body.innerText || "";
         const mainContent = document.querySelector('[role="main"]') as HTMLElement | null;
@@ -198,9 +206,17 @@ async function scrapeMetaAdLibraryInner(
         };
       });
       lastBodyPreview = result.preview;
-      pageInfo = { hasResults: result.hasResults, totalCount: result.totalCount };
+      // Sanity cap: an unrealistic totalCount (>5000) on a country=ALL or
+      // domain-keyword search is almost always keyword noise, not the
+      // actual brand's ad count. Drop it to 0 so a later attempt or the
+      // scanned-card fallback wins.
+      const trustworthyCount =
+        result.totalCount > 5000 && (attempt.country === "ALL" || attempt.q.includes("."))
+          ? 0
+          : result.totalCount;
+      pageInfo = { hasResults: result.hasResults, totalCount: trustworthyCount };
       console.log(
-        `[meta-ad-scraper] try q="${attempt.q}" type=${attempt.type} country=${attempt.country} → hasResults=${result.hasResults} count=${result.totalCount} blocked=${result.blocked ?? "no"}`,
+        `[meta-ad-scraper] try q="${attempt.q}" type=${attempt.type} country=${attempt.country} → hasResults=${result.hasResults} count=${result.totalCount} trusted=${trustworthyCount} blocked=${result.blocked ?? "no"}`,
       );
       if (pageInfo.hasResults) break;
     }
