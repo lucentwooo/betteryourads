@@ -20,7 +20,7 @@ import type { BrandProfile, CompetitorData, DiagnosisResult, Job, VoiceOfCustome
 // for that brand than break the whole pipeline.
 const META_SCRAPE_TIMEOUT_MS = 75_000;
 const WEBSITE_SCREENSHOT_TIMEOUT_MS = 45_000;
-const STRATEGIST_TIMEOUT_MS = 120_000;
+const STRATEGIST_TIMEOUT_MS = 240_000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
