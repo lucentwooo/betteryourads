@@ -492,22 +492,25 @@ async function scrapeMetaAdLibraryInner(
       await delay(200);
     }
 
-    // Use ONLY the detected advertiser-matched count.
-    // The "~X results" on Meta Ad Library is a keyword match count (includes ANY ad
-    // mentioning the brand name in its copy), NOT the advertiser's actual ad count.
-    // Our scanned count is conservative -- the real count may be slightly higher
-    // due to infinite scroll not loading everything.
+    // Prefer the Meta Ad Library "~N results" header for the displayed total —
+    // that's the true count for this advertiser/keyword (e.g. EatClub: 210).
+    // Our scanned count caps out at however many cards loaded during the
+    // bounded scroll loop, so showing it as "total" understates reality and
+    // makes us look uninformed. Fall back to scanned count only when the
+    // header didn't render.
     const matchedFromAdvertiser = cardInfo.videoCount + cardInfo.imageCount;
+    const displayedTotal =
+      pageInfo.totalCount > 0 ? pageInfo.totalCount : matchedFromAdvertiser;
 
     return {
       success: ads.length > 0,
       ads,
-      totalCount: matchedFromAdvertiser,
+      totalCount: displayedTotal,
       videoCount: cardInfo.videoCount,
       imageCount: cardInfo.imageCount,
       reason:
         ads.length > 0
-          ? `Captured ${ads.length} image ads (${cardInfo.videoCount} video ads not captured)`
+          ? `Captured ${ads.length} of ${displayedTotal} active ads (showing best image samples)`
           : "Failed to screenshot ad cards",
     };
   } catch (error) {

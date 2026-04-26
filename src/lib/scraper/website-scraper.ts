@@ -21,7 +21,7 @@ export interface WebsiteScrapResult {
 // Hard cap for the whole scrape: slow sites can otherwise eat the entire
 // function budget. The pipeline treats screenshot failures as recoverable
 // and falls back to plain HTML extraction.
-const SCRAPE_TIMEOUT_MS = 40_000;
+const SCRAPE_TIMEOUT_MS = 75_000;
 const MAX_SCREENSHOT_HEIGHT = 8000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -128,19 +128,19 @@ async function scrapeWebsiteInner(
     // to top before screenshotting. Otherwise the measured scrollHeight is
     // tiny and we screenshot only the hero.
     let lastHeight = 0;
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 10; i++) {
       const newHeight = await page
         .evaluate(() => {
-          window.scrollBy(0, 1000);
+          window.scrollBy(0, 1500);
           return document.documentElement.scrollHeight;
         })
         .catch(() => 0);
-      // Wait for any newly-triggered network requests (lazy images, embeds)
-      // to settle. Best-effort: don't block forever if the page never idles.
+      // Brief settle for lazy images. Aggressive cap: total time across the
+      // loop is bounded so we don't blow past SCRAPE_TIMEOUT_MS.
       await page
-        .waitForNetworkIdle({ idleTime: 400, timeout: 2000 })
+        .waitForNetworkIdle({ idleTime: 300, timeout: 800 })
         .catch(() => {});
-      if (newHeight === lastHeight && i > 3) break;
+      if (newHeight === lastHeight && i > 2) break;
       lastHeight = newHeight;
     }
     // Scroll back to top and let any sticky/header repositioning settle.

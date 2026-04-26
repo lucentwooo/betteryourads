@@ -77,7 +77,7 @@ export function AdGallery({
       </div>
       {totalCount && totalCount > 0 && (
         <p className="text-sm text-muted-foreground">
-          Showing {ads.length} of {totalCount}+ active ads
+          Showing {ads.length} of {totalCount} active ads
           {videoCount && videoCount > 0
             ? ` - ${videoCount} are video ads (we show the thumbnail, not the video)`
             : ""}
