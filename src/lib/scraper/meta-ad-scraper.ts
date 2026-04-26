@@ -50,6 +50,37 @@ function extractDomain(raw?: string): string | undefined {
   }
 }
 
+/** Map a domain TLD to a Meta Ad Library country code. */
+function countryFromDomain(domain?: string): string {
+  if (!domain) return "ALL";
+  const tldMap: Record<string, string> = {
+    "com.au": "AU",
+    "co.uk": "GB",
+    "co.nz": "NZ",
+    "co.za": "ZA",
+    "co.in": "IN",
+    "com.br": "BR",
+    "com.mx": "MX",
+    "com.sg": "SG",
+    "ca": "CA",
+    "de": "DE",
+    "fr": "FR",
+    "es": "ES",
+    "it": "IT",
+    "jp": "JP",
+    "kr": "KR",
+    "nl": "NL",
+    "se": "SE",
+    "no": "NO",
+    "dk": "DK",
+    "ie": "IE",
+  };
+  for (const [tld, code] of Object.entries(tldMap)) {
+    if (domain.endsWith("." + tld)) return code;
+  }
+  return "ALL";
+}
+
 async function scrapeMetaAdLibraryInner(
   companyName: string,
   outputDir: string,
@@ -81,27 +112,44 @@ async function scrapeMetaAdLibraryInner(
     // pages ("Linear Assicurazioni", "Linear Z Thailand", etc.).
     // Falls back to exact-phrase name search when no URL provided.
     const domain = extractDomain(companyUrl);
-    // Try domain first (disambiguates common names), then fall back to company
-    // name with unordered keyword match (catches advertisers whose page name
-    // doesn't include the TLD, e.g. "EatClub" advertiser for eatclub.com.au).
-    const attempts: { q: string; type: "keyword_exact_phrase" | "keyword_unordered" }[] = [];
-    if (domain) attempts.push({ q: domain, type: "keyword_exact_phrase" });
-    if (companyName && companyName.toLowerCase() !== (domain || "")) {
-      attempts.push({ q: companyName, type: "keyword_unordered" });
+    // Strip TLD from domain for an additional search candidate (eatclub.com.au -> eatclub).
+    const domainStem = domain ? domain.split(".")[0] : undefined;
+    // Country code from TLD (.com.au -> AU, .co.uk -> GB, .ca -> CA, etc.).
+    // Defaults to ALL — Meta accepts ALL as global commercial-ads search.
+    const countryCode = countryFromDomain(domain);
+
+    // Try multiple search strategies. Meta Ad Library is unforgiving:
+    //   - keyword_exact_phrase on domain misses if advertiser page name
+    //     doesn't literally contain the TLD (e.g. EatClub vs eatclub.com.au)
+    //   - country=ALL sometimes returns nothing for region-locked advertisers
+    //     until you explicitly pick the country
+    // So we cycle through the most likely combinations and bail as soon as
+    // any returns results.
+    const attempts: { q: string; type: "keyword_exact_phrase" | "keyword_unordered"; country: string }[] = [];
+    if (companyName) {
+      attempts.push({ q: companyName, type: "keyword_unordered", country: countryCode });
+      if (countryCode !== "ALL") attempts.push({ q: companyName, type: "keyword_unordered", country: "ALL" });
     }
-    if (attempts.length === 0) attempts.push({ q: companyName, type: "keyword_unordered" });
+    if (domainStem && domainStem.toLowerCase() !== companyName.toLowerCase()) {
+      attempts.push({ q: domainStem, type: "keyword_unordered", country: countryCode });
+    }
+    if (domain && domain !== domainStem) {
+      attempts.push({ q: domain, type: "keyword_exact_phrase", country: countryCode });
+    }
+    if (attempts.length === 0) attempts.push({ q: companyName, type: "keyword_unordered", country: "ALL" });
 
     let pageInfo = { hasResults: false, totalCount: 0 };
     let searchQuery = attempts[0].q;
+    let lastBodyPreview = "";
     for (const attempt of attempts) {
       searchQuery = attempt.q;
-      const searchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q=${encodeURIComponent(attempt.q)}&search_type=${attempt.type}`;
+      const searchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${attempt.country}&q=${encodeURIComponent(attempt.q)}&search_type=${attempt.type}`;
       await page.goto(searchUrl, {
         waitUntil: "domcontentloaded",
         timeout: 15000,
       });
       await delay(5000);
-      pageInfo = await page.evaluate(() => {
+      const result = await page.evaluate(() => {
         const bodyText = document.body.innerText;
         if (
           bodyText.includes("Log in") &&
@@ -109,19 +157,27 @@ async function scrapeMetaAdLibraryInner(
         ) {
           const mainContent = document.querySelector('[role="main"]') as HTMLElement | null;
           if (!mainContent || mainContent.innerText.length < 100) {
-            return { hasResults: false, totalCount: 0 };
+            return { hasResults: false, totalCount: 0, preview: bodyText.slice(0, 200) };
           }
         }
         if (bodyText.includes("No ads match your search")) {
-          return { hasResults: false, totalCount: 0 };
+          return { hasResults: false, totalCount: 0, preview: bodyText.slice(0, 200) };
         }
         const countMatch = bodyText.match(/~?([\d,]+)\s+results?/i);
         const totalCount = countMatch
           ? parseInt(countMatch[1].replace(/,/g, ""), 10)
           : 0;
-        return { hasResults: true, totalCount };
+        return { hasResults: true, totalCount, preview: bodyText.slice(0, 200) };
       });
+      lastBodyPreview = result.preview;
+      pageInfo = { hasResults: result.hasResults, totalCount: result.totalCount };
+      console.log(
+        `[meta-ad-scraper] try q="${attempt.q}" type=${attempt.type} country=${attempt.country} → hasResults=${result.hasResults} count=${result.totalCount}`,
+      );
       if (pageInfo.hasResults) break;
+    }
+    if (!pageInfo.hasResults) {
+      console.log(`[meta-ad-scraper] all attempts exhausted. Last page preview: ${lastBodyPreview.slice(0, 200)}`);
     }
 
     if (!pageInfo.hasResults) {
