@@ -33,6 +33,7 @@ export async function runStrategist(
   const { output, qa, escalated } = await runWithQA<DiagnosisResult>({
     generatorName: "Strategist",
     qaName: "DiagnosisQA",
+    maxRetries: params.modelMode === "cheap" ? 1 : 2,
     generate: async (feedback) => {
       const userPrompt = buildDiagnosisUserPrompt(params, feedback);
       const msg = await createTextMessage({
@@ -40,7 +41,7 @@ export async function runStrategist(
         max_tokens: 8000,
         system: diagnosisSystemPrompt,
         messages: [{ role: "user", content: userPrompt }],
-      }, { timeout: 90_000 }, params.modelMode);
+      }, { timeout: params.modelMode === "cheap" ? 220_000 : 90_000 }, params.modelMode);
       const raw = msg.content[0].type === "text" ? msg.content[0].text : "";
       return parseDiagnosis(raw, params.voc);
     },

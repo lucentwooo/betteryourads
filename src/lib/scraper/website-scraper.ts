@@ -107,13 +107,22 @@ async function scrapeWebsiteInner(
       .catch(() => {});
     await new Promise((r) => setTimeout(r, 400));
 
-    // One short scroll to trigger lazy content, then back to top.
+    // Progressively scroll the entire page to trigger lazy-loaded sections,
+    // then return to top. Modern marketing sites only render below-fold
+    // content as you scroll past it, so a single short scroll undercounts
+    // page height drastically (ends up screenshotting only the hero).
     await page
       .evaluate(async () => {
-        window.scrollTo({ top: 2000, behavior: "instant" });
-        await new Promise((r) => setTimeout(r, 300));
+        const step = 800;
+        const maxScroll = 12000;
+        for (let y = 0; y <= maxScroll; y += step) {
+          window.scrollTo({ top: y, behavior: "instant" });
+          await new Promise((r) => setTimeout(r, 250));
+          const reached = (document.documentElement.scrollHeight || 0) - window.innerHeight;
+          if (y >= reached) break;
+        }
         window.scrollTo({ top: 0, behavior: "instant" });
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 400));
       })
       .catch(() => {});
 
