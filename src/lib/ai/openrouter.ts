@@ -74,6 +74,15 @@ async function chatRequest(
         messages,
         max_tokens: opts.maxTokens ?? 1500,
         temperature: opts.temperature ?? 0.4,
+        // DeepInfra's instance of deepseek/deepseek-chat-v3.1 truncates to
+        // ~150 completion tokens with finish_reason=stop. Pin to providers
+        // that produce full-length output. Doesn't apply to vision/search
+        // models (Gemini, Sonar) which only have one provider, but harmless.
+        provider: {
+          order: ["Novita", "SambaNova", "Fireworks", "Together"],
+          ignore: ["DeepInfra"],
+          allow_fallbacks: true,
+        },
       }),
       signal: controller.signal,
     });

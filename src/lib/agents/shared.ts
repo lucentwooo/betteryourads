@@ -155,6 +155,16 @@ export async function createTextMessage(
         messages,
         max_tokens: params.max_tokens,
         temperature: params.temperature,
+        // OpenRouter load-balances across multiple providers per model. For
+        // DeepSeek v3.1 specifically, DeepInfra's instance truncates to
+        // ~150 completion tokens with finish_reason=stop while Novita and
+        // SambaNova produce full-length output. Pin order + ignore the bad
+        // ones so we get reliable diagnoses.
+        provider: {
+          order: ["Novita", "SambaNova", "Fireworks", "Together"],
+          ignore: ["DeepInfra"],
+          allow_fallbacks: true,
+        },
       }),
       signal: controller.signal,
     });
