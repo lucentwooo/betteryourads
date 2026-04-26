@@ -53,11 +53,19 @@ export async function scrapeWebsite(
   outputDir: string,
   existingBrowser?: Browser
 ): Promise<WebsiteScrapResult> {
-  return withTimeout(
-    scrapeWebsiteInner(url, outputDir, existingBrowser),
-    SCRAPE_TIMEOUT_MS,
-    `scrapeWebsite(${url})`
-  );
+  const t0 = Date.now();
+  try {
+    const result = await withTimeout(
+      scrapeWebsiteInner(url, outputDir, existingBrowser),
+      SCRAPE_TIMEOUT_MS,
+      `scrapeWebsite(${url})`
+    );
+    console.log(`[website-scraper] finished in ${Date.now() - t0}ms`);
+    return result;
+  } catch (e) {
+    console.warn(`[website-scraper] FAILED in ${Date.now() - t0}ms: ${e instanceof Error ? e.message : e}`);
+    throw e;
+  }
 }
 
 async function scrapeWebsiteInner(
@@ -66,17 +74,21 @@ async function scrapeWebsiteInner(
   existingBrowser?: Browser
 ): Promise<WebsiteScrapResult> {
   console.log(`[website-scraper] start url=${url}`);
+  const launchStart = Date.now();
   const browser = existingBrowser ?? (await launchBrowser());
+  console.log(`[website-scraper] browser launched in ${Date.now() - launchStart}ms`);
   const ownBrowser = !existingBrowser;
 
   try {
     const page = await browser.newPage();
+    console.log(`[website-scraper] newPage created`);
     page.setDefaultTimeout(10_000);
     page.setDefaultNavigationTimeout(15_000);
     await page.setViewport({ width: 1440, height: 900 });
     await page.setUserAgent(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
+    console.log(`[website-scraper] viewport+UA set, calling goto`);
 
     // Short navigation timeout — if the site is that slow, fall through
     // and screenshot whatever rendered. We don't retry with `load` because
@@ -89,7 +101,7 @@ async function scrapeWebsiteInner(
       });
       console.log(`[website-scraper] page.goto OK, landed at ${page.url()}`);
     } catch (e) {
-      console.warn(`[website-scraper] page.goto failed for ${url}:`, e instanceof Error ? e.message : e);
+      console.warn(`[website-scraper] page.goto failed for ${url}: ${e instanceof Error ? e.message : e}`);
       // Continue with whatever state rendered.
     }
 
@@ -135,6 +147,7 @@ async function scrapeWebsiteInner(
     // for those sections' images/JS to actually finish loading, then return
     // to top before screenshotting. Otherwise the measured scrollHeight is
     // tiny and we screenshot only the hero.
+    console.log(`[website-scraper] starting scroll loop`);
     let lastHeight = 0;
     for (let i = 0; i < 10; i++) {
       const newHeight = await page

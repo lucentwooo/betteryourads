@@ -397,16 +397,34 @@ async function scrapeMetaAdLibraryInner(
       }
 
       // Capture the most common advertiser display name across matched cards.
-      // The user's input ("Jaecoo Australia") often differs from the actual
-      // Facebook Page name ("Omoda Jaecoo Australia"), and the page-name
-      // search needs the actual Page name to find the right brand tile.
+      // Pick the line *immediately before* "Sponsored" — the prior regex was
+      // greedy and grabbed UI labels like "See ad details" along with the
+      // actual Page name.
       const advertiserNameCounts: Record<string, number> = {};
+      const UI_LABELS = new Set([
+        "see ad details",
+        "see summary details",
+        "active",
+        "ad library",
+        "sponsored",
+      ]);
       for (const el of tagged) {
         const cardText = (el as HTMLElement).innerText || "";
-        const m = cardText.match(/([a-z0-9][\w\s.&'-]{2,80})\s*\n?\s*sponsored/i);
-        if (m) {
-          const name = m[1].trim();
-          advertiserNameCounts[name] = (advertiserNameCounts[name] || 0) + 1;
+        const lines = cardText.split("\n").map((l) => l.trim());
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].toLowerCase() !== "sponsored") continue;
+          // Walk back to find the most recent non-UI line — that's the Page name.
+          for (let j = i - 1; j >= 0 && j >= i - 4; j--) {
+            const candidate = lines[j];
+            if (!candidate) continue;
+            if (UI_LABELS.has(candidate.toLowerCase())) continue;
+            if (candidate.length < 2 || candidate.length > 80) continue;
+            // Skip if it looks like body copy (long sentences with periods).
+            if (/[.!?]\s/.test(candidate)) continue;
+            advertiserNameCounts[candidate] = (advertiserNameCounts[candidate] || 0) + 1;
+            break;
+          }
+          break;
         }
       }
       let dominantAdvertiser: string | null = null;
