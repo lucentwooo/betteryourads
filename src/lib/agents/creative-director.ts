@@ -26,6 +26,7 @@ export async function runCreativeDirector(
   const { output, qa, escalated } = await runWithQA<Concept[]>({
     generatorName: "CreativeDirector",
     qaName: "ConceptQA",
+    maxRetries: params.modelMode === "cheap" ? 1 : 2,
     generate: async (feedback) => {
       const msg = await createTextMessage({
         model: MODEL,

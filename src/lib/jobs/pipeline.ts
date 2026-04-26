@@ -541,6 +541,14 @@ async function stageCreativeDirector(jobId: string): Promise<void> {
       ? "escalate"
       : undefined;
     await addProgress(jobId, "Creative Director", msg, { agent: "creative-director", qaOutcome: outcome });
+  }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : "Creative director failed";
+    console.error("[pipeline] creative director failed:", err);
+    await addProgress(jobId, "Creative Director fallback", msg, {
+      agent: "creative-director",
+      qaOutcome: "escalate",
+    });
+    return [] as Awaited<ReturnType<typeof runCreativeDirector>>;
   });
 
   await updateJob(jobId, { concepts });

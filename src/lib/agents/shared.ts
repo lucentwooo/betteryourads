@@ -128,7 +128,10 @@ export async function createTextMessage(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options?.timeout ?? 90_000);
+  // DeepSeek via OpenRouter is much slower than Claude on long prompts.
+  // Use 220s default in cheap mode so callers don't have to remember.
+  const defaultTimeoutMs = mode === "cheap" ? 220_000 : 90_000;
+  const timeout = setTimeout(() => controller.abort(), options?.timeout ?? defaultTimeoutMs);
   try {
     const system = flattenSystem(params.system);
     const messages = [
@@ -205,11 +208,27 @@ A pass requires EVERY dimension to score >= ${params.passThreshold}. Be strict. 
     max_tokens: 2000,
     system: params.systemPrompt,
     messages: [{ role: "user", content: full }],
-  }, { timeout: 60_000 }, params.modelMode);
+  }, { timeout: params.modelMode === "cheap" ? 180_000 : 60_000 }, params.modelMode);
 
   const text = msg.content[0].type === "text" ? msg.content[0].text : "";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  // Strip code fences first — DeepSeek often wraps JSON in ```json ... ```
+  const fenceStripped = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1");
+  // Greedy match captures the full JSON even when models add prose around it.
+  const jsonMatch = fenceStripped.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
+    // Cheap-mode tolerant fallback: if the judge can't return JSON, treat it
+    // as a soft pass at threshold so the pipeline keeps moving instead of
+    // bouncing forever. The diagnosis itself is what users see; a flaky judge
+    // shouldn't block the whole result.
+    if (params.modelMode === "cheap") {
+      return {
+        pass: true,
+        score: params.passThreshold,
+        issues: ["QA judge returned non-JSON; soft-passing in cheap mode"],
+        feedbackForRetry: "",
+        retries: 0,
+      };
+    }
     return {
       pass: false,
       score: 0,
@@ -238,6 +257,15 @@ A pass requires EVERY dimension to score >= ${params.passThreshold}. Be strict. 
       rubric: parsed.scores,
     };
   } catch {
+    if (params.modelMode === "cheap") {
+      return {
+        pass: true,
+        score: params.passThreshold,
+        issues: ["QA judge JSON parse error; soft-passing in cheap mode"],
+        feedbackForRetry: "",
+        retries: 0,
+      };
+    }
     return {
       pass: false,
       score: 0,
