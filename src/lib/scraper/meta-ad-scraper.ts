@@ -11,19 +11,25 @@ interface MetaAdResult {
   videoCount?: number;
   imageCount?: number;
   reason?: string;
+  trace?: string[];
 }
 
 const delay = (ms: number) =>
-  new Promise((r) => setTimeout(r, ms + Math.random() * 1000));
+  new Promise((r) => setTimeout(r, ms + Math.random() * 600));
 
 export async function scrapeMetaAdLibrary(
   companyName: string,
   outputDir: string,
   prefix: string = "company",
-  companyUrl?: string
+  companyUrl?: string,
 ): Promise<MetaAdResult> {
-  // Global timeout -- never spend more than 90s per company (covers domain
-  // attempt + name fallback + scroll + screenshot capture)
+  const trace: string[] = [];
+  const log = (msg: string) => {
+    const line = `[${new Date().toISOString().slice(11, 19)}] ${msg}`;
+    trace.push(line);
+    console.log(`[meta-ad-scraper] ${line}`);
+  };
+
   const timeoutPromise = new Promise<MetaAdResult>((resolve) =>
     setTimeout(
       () =>
@@ -31,15 +37,18 @@ export async function scrapeMetaAdLibrary(
           success: false,
           ads: [],
           reason: `Timed out searching for ${companyName} ads`,
+          trace,
         }),
-      130000
-    )
+      130000,
+    ),
   );
 
-  return Promise.race([timeoutPromise, scrapeMetaAdLibraryInner(companyName, outputDir, prefix, companyUrl)]);
+  return Promise.race([
+    timeoutPromise,
+    scrapeMetaAdLibraryInner(companyName, outputDir, prefix, companyUrl, log, trace),
+  ]);
 }
 
-/** Extract bare domain like "linear.app" from a URL or naked domain string. */
 function extractDomain(raw?: string): string | undefined {
   if (!raw) return undefined;
   try {
@@ -50,30 +59,13 @@ function extractDomain(raw?: string): string | undefined {
   }
 }
 
-/** Map a domain TLD to a Meta Ad Library country code. */
 function countryFromDomain(domain?: string): string {
   if (!domain) return "ALL";
   const tldMap: Record<string, string> = {
-    "com.au": "AU",
-    "co.uk": "GB",
-    "co.nz": "NZ",
-    "co.za": "ZA",
-    "co.in": "IN",
-    "com.br": "BR",
-    "com.mx": "MX",
-    "com.sg": "SG",
-    "ca": "CA",
-    "de": "DE",
-    "fr": "FR",
-    "es": "ES",
-    "it": "IT",
-    "jp": "JP",
-    "kr": "KR",
-    "nl": "NL",
-    "se": "SE",
-    "no": "NO",
-    "dk": "DK",
-    "ie": "IE",
+    "com.au": "AU", "co.uk": "GB", "co.nz": "NZ", "co.za": "ZA",
+    "co.in": "IN", "com.br": "BR", "com.mx": "MX", "com.sg": "SG",
+    ca: "CA", de: "DE", fr: "FR", es: "ES", it: "IT", jp: "JP",
+    kr: "KR", nl: "NL", se: "SE", no: "NO", dk: "DK", ie: "IE",
   };
   for (const [tld, code] of Object.entries(tldMap)) {
     if (domain.endsWith("." + tld)) return code;
@@ -81,493 +73,282 @@ function countryFromDomain(domain?: string): string {
   return "ALL";
 }
 
-async function scrapeMetaAdLibraryInner(
-  companyName: string,
-  outputDir: string,
-  prefix: string,
-  companyUrl?: string
-): Promise<MetaAdResult> {
-  const browser = await launchBrowser();
+function normalize(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\.(ai|io|com|co|app|so|dev|net|org)\b/g, "")
+    .replace(/\b(inc|llc|ltd|corp|company|group)\b/g, "")
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+interface PageTile {
+  pageId: string;
+  pageName: string;
+  activeAdCount: number;
+}
+
+/**
+ * Strategy 1 (primary): hit Meta Ad Library's Pages tab and find the tile
+ * that matches our brand. This is way more reliable than keyword-searching
+ * ad copy because each tile is one Page with its TRUE active ad count
+ * already displayed by Meta.
+ */
+async function findBrandPageTile(
+  page: import("puppeteer-core").Page,
+  searchTerm: string,
+  country: string,
+  log: (msg: string) => void,
+): Promise<PageTile | null> {
+  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&q=${encodeURIComponent(
+    searchTerm,
+  )}&search_type=page`;
+  log(`page-search GOTO country=${country} q="${searchTerm}"`);
   try {
-    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  } catch (e) {
+    log(`page-search goto failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+  // Wait for either page tiles or empty state.
+  await page
+    .waitForFunction(
+      () => {
+        const t = document.body.innerText || "";
+        return (
+          /\d[\d,.]*\s*[KkMm]?\s+(?:active\s+)?ads?\b/i.test(t) ||
+          /no pages match/i.test(t) ||
+          /no results/i.test(t)
+        );
+      },
+      { timeout: 12000 },
+    )
+    .catch(() => {});
+  await delay(1200);
 
-    // Stealth settings
-    await page.setViewport({ width: 1440, height: 900 });
-    await page.setUserAgent(
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
-    await page.setExtraHTTPHeaders({
-      "Accept-Language": "en-US,en;q=0.9",
-    });
+  const tiles = await page.evaluate((rawTerm: string) => {
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/\.(ai|io|com|co|app|so|dev|net|org)\b/g, "")
+        .replace(/\b(inc|llc|ltd|corp|company|group)\b/g, "")
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const target = norm(rawTerm);
+    const results: { pageId: string; pageName: string; activeAdCount: number; rawText: string }[] = [];
 
-    // Remove webdriver flag
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => false });
-    });
+    // Each Page tile contains a link to ?view_all_page_id=NNN. Walk those.
+    const links = Array.from(document.querySelectorAll("a[href*='view_all_page_id=']"));
+    const seen = new Set<string>();
+    for (const a of links) {
+      const href = (a as HTMLAnchorElement).href || "";
+      const m = href.match(/view_all_page_id=(\d+)/);
+      if (!m) continue;
+      const pageId = m[1];
+      if (seen.has(pageId)) continue;
+      seen.add(pageId);
 
-    // When a domain is known, prefer searching by domain (e.g. "linear.app").
-    // Meta Ad Library returns results whose advertiser page links to that
-    // domain, which disambiguates common words like "Linear" from unrelated
-    // pages ("Linear Assicurazioni", "Linear Z Thailand", etc.).
-    // Falls back to exact-phrase name search when no URL provided.
-    const domain = extractDomain(companyUrl);
-    // Strip TLD from domain for an additional search candidate (eatclub.com.au -> eatclub).
-    const domainStem = domain ? domain.split(".")[0] : undefined;
-    // Country code from TLD (.com.au -> AU, .co.uk -> GB, .ca -> CA, etc.).
-    // Defaults to ALL — Meta accepts ALL as global commercial-ads search.
-    const countryCode = countryFromDomain(domain);
-
-    // Try multiple search strategies. Meta Ad Library is unforgiving:
-    //   - keyword_exact_phrase on domain misses if advertiser page name
-    //     doesn't literally contain the TLD (e.g. EatClub vs eatclub.com.au)
-    //   - country=ALL sometimes returns nothing for region-locked advertisers
-    //     until you explicitly pick the country
-    // So we cycle through the most likely combinations and bail as soon as
-    // any returns results.
-    const attempts: { q: string; type: "keyword_exact_phrase" | "keyword_unordered"; country: string }[] = [];
-    if (companyName) {
-      attempts.push({ q: companyName, type: "keyword_unordered", country: countryCode });
-      // For brands without a regional domain, also try US explicitly. ALL
-      // theoretically includes US but in practice Meta gates many advertisers
-      // (e.g. US-only brands like Stripe) behind a country=US search.
-      if (countryCode === "ALL") {
-        attempts.push({ q: companyName, type: "keyword_unordered", country: "US" });
-      } else {
-        attempts.push({ q: companyName, type: "keyword_unordered", country: "ALL" });
-        attempts.push({ q: companyName, type: "keyword_unordered", country: "US" });
+      // Walk up to find the tile container — biggest ancestor still <800px wide.
+      let el: Element | null = a;
+      let bestContainer: HTMLElement | null = null;
+      while (el && el.parentElement) {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (r.width > 200 && r.width < 800 && r.height > 60 && r.height < 600) {
+          bestContainer = el as HTMLElement;
+        }
+        el = el.parentElement;
       }
-    }
-    if (domainStem && domainStem.toLowerCase() !== companyName.toLowerCase()) {
-      attempts.push({ q: domainStem, type: "keyword_unordered", country: countryCode });
-    }
-    if (domain && domain !== domainStem) {
-      attempts.push({ q: domain, type: "keyword_exact_phrase", country: countryCode });
-    }
-    if (attempts.length === 0) attempts.push({ q: companyName, type: "keyword_unordered", country: "ALL" });
+      const container = bestContainer ?? (a.parentElement as HTMLElement | null);
+      if (!container) continue;
 
-    let pageInfo = { hasResults: false, totalCount: 0 };
-    let searchQuery = attempts[0].q;
-    let lastBodyPreview = "";
-    for (const attempt of attempts) {
-      searchQuery = attempt.q;
-      const searchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${attempt.country}&q=${encodeURIComponent(attempt.q)}&search_type=${attempt.type}`;
-      await page.goto(searchUrl, {
-        waitUntil: "domcontentloaded",
-        timeout: 15000,
-      });
-      // First wait for ANY signal that the page rendered. Then keep waiting
-      // (briefly) specifically for the count header — it usually appears a
-      // beat after the cards. Without this we'd race to read totalCount=0
-      // and fall through to country=ALL where keyword search returns
-      // wildly inflated counts (e.g. 17,000 for a 210-ad brand).
-      await page
-        .waitForFunction(
-          () => {
-            const t = document.body.innerText || "";
-            return (
-              /~?[\d,]+\s+results?/i.test(t) ||
-              t.includes("No ads match your search") ||
-              t.includes("Library ID")
-            );
-          },
-          { timeout: 12000 },
-        )
-        .catch(() => {});
-      await page
-        .waitForFunction(
-          () => /~?[\d,]+\s+results?/i.test(document.body.innerText || ""),
-          { timeout: 6000 },
-        )
-        .catch(() => {});
-      await delay(800);
-      const result = await page.evaluate(() => {
-        const bodyText = document.body.innerText || "";
-        const mainContent = document.querySelector('[role="main"]') as HTMLElement | null;
-        const mainText = mainContent?.innerText || "";
-        // Login wall: page is the auth gate, not the ad library results UI.
-        // Detected by login form being the dominant content AND no Library IDs
-        // anywhere in the page.
-        if (
-          bodyText.includes("Log in") &&
-          bodyText.includes("Create new account") &&
-          !bodyText.includes("Library ID") &&
-          (!mainContent || mainText.length < 200)
-        ) {
-          return { hasResults: false, totalCount: 0, blocked: "login-wall", preview: bodyText.slice(0, 300) };
-        }
-        if (bodyText.includes("No ads match your search")) {
-          return { hasResults: false, totalCount: 0, blocked: "no-match", preview: bodyText.slice(0, 300) };
-        }
-        const countMatch = bodyText.match(/~?([\d,]+)\s+results?/i);
-        const totalCount = countMatch
-          ? parseInt(countMatch[1].replace(/,/g, ""), 10)
-          : 0;
-        // Treat "Library ID" presence as ground truth for "ads loaded",
-        // even when the count header didn't render.
-        const hasLibraryIds = bodyText.includes("Library ID");
-        return {
-          hasResults: hasLibraryIds || totalCount > 0,
-          totalCount,
-          blocked: null,
-          preview: bodyText.slice(0, 300),
-        };
-      });
-      lastBodyPreview = result.preview;
-      // Sanity cap: an unrealistic totalCount (>5000) on a country=ALL or
-      // domain-keyword search is almost always keyword noise, not the
-      // actual brand's ad count. Drop it to 0 so a later attempt or the
-      // scanned-card fallback wins.
-      const trustworthyCount =
-        result.totalCount > 5000 && (attempt.country === "ALL" || attempt.q.includes("."))
-          ? 0
-          : result.totalCount;
-      pageInfo = { hasResults: result.hasResults, totalCount: trustworthyCount };
-      console.log(
-        `[meta-ad-scraper] try q="${attempt.q}" type=${attempt.type} country=${attempt.country} → hasResults=${result.hasResults} count=${result.totalCount} trusted=${trustworthyCount} blocked=${result.blocked ?? "no"}`,
-      );
-      if (pageInfo.hasResults) break;
-    }
-    if (!pageInfo.hasResults) {
-      console.log(`[meta-ad-scraper] all attempts exhausted. Last page preview: ${lastBodyPreview.slice(0, 200)}`);
-    }
+      const text = (container.innerText || "").trim();
+      if (!text || text.length > 800) continue;
 
-    if (!pageInfo.hasResults) {
-      return {
-        success: false,
-        ads: [],
-        totalCount: 0,
-        reason:
-          "No ads found. Try uploading screenshots manually.",
-      };
-    }
-
-    // Scroll aggressively to load more ads (infinite scroll).
-    // Stop early if scroll height stops growing (end of results).
-    let lastHeight = 0;
-    for (let i = 0; i < 12; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1500));
-      await delay(1000);
-      const newHeight = await page.evaluate(() => document.body.scrollHeight);
-      if (newHeight === lastHeight && i > 2) break;
-      lastHeight = newHeight;
-    }
-
-    // Mark ad cards in the DOM -- filter to the ACTUAL advertiser AND image ads only.
-    // Video ads have <video> elements or play-button icons; image ads don't.
-    // We count both, but only tag image ads for screenshotting.
-    const cardInfo = await page.evaluate((args: { searchTerm: string; domain?: string }) => {
-      const { searchTerm, domain } = args;
-      const walker = document.createTreeWalker(
-        document.body,
-        NodeFilter.SHOW_TEXT,
-        {
-          acceptNode: (n) =>
-            n.textContent?.includes("Library ID")
-              ? NodeFilter.FILTER_ACCEPT
-              : NodeFilter.FILTER_REJECT,
-        }
-      );
-
-      const nodes: Node[] = [];
-      let current = walker.nextNode();
-      while (current) {
-        nodes.push(current);
-        current = walker.nextNode();
-      }
-
-      const tagged: Set<Element> = new Set();
-      let imageCardIndex = 0;
-      let totalMatchedCards = 0;
-      let videoCardCount = 0;
-      const normalizedTerm = searchTerm.toLowerCase().trim();
-
-      for (const node of nodes) {
-        let el: Element | null = node.parentElement;
-        while (el && el.parentElement) {
-          const r = el.getBoundingClientRect();
-          if (r.width >= 250 && r.width <= 600 && r.height >= 300) {
-            if (!tagged.has(el)) {
-              let isDescendant = false;
-              for (const existing of tagged) {
-                if (existing.contains(el) || el.contains(existing)) {
-                  isDescendant = true;
-                  break;
-                }
-              }
-              if (!isDescendant) {
-                const cardText = (el as HTMLElement).innerText?.toLowerCase() || "";
-                // Require advertiser name to be a reasonable length (3-80 chars)
-                // to avoid matching single-character noise
-                const sponsoredMatch = cardText.match(
-                  /([a-z0-9][\w\s.&'-]{2,80})\s*\n?\s*sponsored/i
-                );
-                const advertiserName = sponsoredMatch
-                  ? sponsoredMatch[1].trim().toLowerCase()
-                  : "";
-
-                // Normalize both sides by stripping common suffixes
-                const strip = (s: string) =>
-                  s
-                    .replace(/\.(ai|io|com|co|app|so|dev|net|org)\b/g, "")
-                    .replace(/\b(inc|llc|ltd|corp|co|company|group)\b/g, "")
-                    .replace(/[^\w\s]/g, "")
-                    .replace(/\s+/g, " ")
-                    .trim();
-
-                const normTerm = strip(normalizedTerm);
-                const normAdvertiser = strip(advertiserName);
-
-                // Strict match. Previous implementation split the search term
-                // into words and kept only words >=3 chars, so "V1 Golf"
-                // collapsed to just "golf" and matched every golf advertiser.
-                // Require either:
-                //  (a) full normalized term appears as a contiguous phrase in
-                //      the advertiser name (handles "V1 Golf" → "V1 Golf …"),
-                //  (b) advertiser name appears as a contiguous phrase in the
-                //      search term (handles "Tally Forms" → advertiser "Tally").
-                const escaped = normTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                const termInAdvertiser = new RegExp(
-                  `\\b${escaped}\\b`
-                ).test(normAdvertiser);
-                const advertiserInTerm =
-                  normAdvertiser.length >= 3 &&
-                  new RegExp(
-                    `\\b${normAdvertiser.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`
-                  ).test(normTerm);
-
-                // Domain-based match: card text mentions our domain or its stem
-                // (e.g. card for Linear.app shows "linear.app" in the page URL row).
-                let domainInCard = false;
-                if (domain) {
-                  const domainStem = domain.replace(/\.[a-z]+$/, "");
-                  const cardTextLower = (el as HTMLElement).innerText?.toLowerCase() || "";
-                  if (cardTextLower.includes(domain) || cardTextLower.includes(`/${domainStem}`)) {
-                    domainInCard = true;
-                  }
-                }
-
-                // Strict name match: require advertiser name to equal or start
-                // with the normalized search term. Rejects "Linear Assicurazioni"
-                // when searching "Linear" because it's not a pure match.
-                const strictNameMatch =
-                  normAdvertiser === normTerm ||
-                  normAdvertiser.startsWith(normTerm + " ") ||
-                  normAdvertiser === normTerm.replace(/\s+/g, "");
-
-                // Loose match: search term appears as a word inside advertiser
-                // name OR vice versa. Disabled for short single-word terms —
-                // "Square" would otherwise tag "Lava Cake by Lemon Square",
-                // "Apple" would tag "Big Apple Foods", etc. For multi-word or
-                // 9+ char names, collisions are rare enough to allow loose.
-                const isShortSingleWord =
-                  !normTerm.includes(" ") && normTerm.length <= 8;
-                const looseNameMatch =
-                  !isShortSingleWord &&
-                  advertiserName.length >= 3 &&
-                  normTerm.length >= 2 &&
-                  (termInAdvertiser || advertiserInTerm);
-
-                const matches =
-                  strictNameMatch || domainInCard || looseNameMatch;
-
-                if (matches) {
-                  totalMatchedCards++;
-
-                  // Detect video ads via <video> tag (most reliable signal)
-                  const hasVideo = !!el.querySelector("video");
-
-                  if (hasVideo) {
-                    videoCardCount++;
-                  } else {
-                    imageCardIndex++;
-                  }
-
-                  // Tag EVERY matched card (both image and video) for screenshotting.
-                  // Video thumbnails are still useful diagnostically.
-                  el.setAttribute(
-                    "data-betteryourads-card",
-                    String(totalMatchedCards - 1)
-                  );
-                  el.setAttribute(
-                    "data-betteryourads-type",
-                    hasVideo ? "video" : "image"
-                  );
-                  tagged.add(el);
-                }
-              }
-            }
-            break;
-          }
-          el = el.parentElement;
-        }
-      }
-
-      // Capture the most common advertiser display name across matched cards.
-      // Pick the line *immediately before* "Sponsored" — the prior regex was
-      // greedy and grabbed UI labels like "See ad details" along with the
-      // actual Page name.
-      const advertiserNameCounts: Record<string, number> = {};
-      const UI_LABELS = new Set([
-        "see ad details",
-        "see summary details",
-        "active",
-        "ad library",
-        "sponsored",
-      ]);
-      for (const el of tagged) {
-        const cardText = (el as HTMLElement).innerText || "";
-        const lines = cardText.split("\n").map((l) => l.trim());
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].toLowerCase() !== "sponsored") continue;
-          // Walk back to find the most recent non-UI line — that's the Page name.
-          for (let j = i - 1; j >= 0 && j >= i - 4; j--) {
-            const candidate = lines[j];
-            if (!candidate) continue;
-            if (UI_LABELS.has(candidate.toLowerCase())) continue;
-            if (candidate.length < 2 || candidate.length > 80) continue;
-            // Skip if it looks like body copy (long sentences with periods).
-            if (/[.!?]\s/.test(candidate)) continue;
-            advertiserNameCounts[candidate] = (advertiserNameCounts[candidate] || 0) + 1;
-            break;
-          }
+      // First non-empty, reasonably-short line is usually the page name.
+      const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+      let pageName = "";
+      for (const line of lines) {
+        if (line.length >= 2 && line.length <= 80 && !/active\s+ads?/i.test(line) && !/page\s*[·•]/i.test(line)) {
+          pageName = line;
           break;
         }
       }
-      let dominantAdvertiser: string | null = null;
-      let bestCount = 0;
-      for (const [name, count] of Object.entries(advertiserNameCounts)) {
-        if (count > bestCount) {
-          bestCount = count;
-          dominantAdvertiser = name;
-        }
+      if (!pageName) continue;
+
+      // Active ad count: handle "43 active ads", "1.2K active ads", "1 active ad".
+      const countMatch = text.match(/(\d[\d,.]*)\s*([KkMm]?)\s+(?:active\s+)?ads?\b/i);
+      let activeAdCount = 0;
+      if (countMatch) {
+        const num = parseFloat(countMatch[1].replace(/,/g, ""));
+        const suffix = countMatch[2].toLowerCase();
+        activeAdCount = suffix === "k" ? Math.round(num * 1000) : suffix === "m" ? Math.round(num * 1_000_000) : Math.round(num);
       }
 
-      return {
-        imageCount: imageCardIndex,
-        videoCount: videoCardCount,
-        totalMatched: totalMatchedCards,
-        dominantAdvertiser,
-      };
-    }, { searchTerm: companyName, domain });
-    console.log(`[meta-ad-scraper] dominantAdvertiser="${cardInfo.dominantAdvertiser ?? "none"}"`);
+      results.push({ pageId, pageName, activeAdCount, rawText: text.slice(0, 200) });
+    }
 
-    // Try to extract the advertiser's Meta page_id from any matched card.
-    // Cards sometimes contain links like `?view_all_page_id=123` to the
-    // brand's full ad list. Often they don't (Meta links by page username
-    // instead of numeric ID), in which case we fall back to a search_type=page
-    // query later.
-    const brandPageId = await page
-      .evaluate(() => {
-        const cards = document.querySelectorAll("[data-betteryourads-card]");
-        for (const c of cards) {
-          const links = c.querySelectorAll("a[href]");
-          for (const a of links) {
-            const href = (a as HTMLAnchorElement).href || "";
-            const m = href.match(/view_all_page_id=(\d+)/);
-            if (m) return m[1];
+    // Score: exact normalized match → starts-with → contains. Keep best.
+    let best: { pageId: string; pageName: string; activeAdCount: number; rawText: string } | null = null;
+    let bestScore = -1;
+    for (const r of results) {
+      const np = norm(r.pageName);
+      let score = -1;
+      if (np === target) score = 3;
+      else if (np.startsWith(target + " ") || np.endsWith(" " + target)) score = 2;
+      else if (np.includes(target)) score = 1;
+      if (score > bestScore) {
+        bestScore = score;
+        best = r;
+      }
+    }
+    return { tiles: results.slice(0, 8), best, bestScore };
+  }, searchTerm);
+
+  log(
+    `page-search found ${tiles.tiles.length} tiles. Best: ${
+      tiles.best ? `"${tiles.best.pageName}" id=${tiles.best.pageId} ads=${tiles.best.activeAdCount} score=${tiles.bestScore}` : "none"
+    }`,
+  );
+  if (tiles.tiles.length > 0 && tiles.tiles.length <= 5) {
+    log(`page-search tiles: ${tiles.tiles.map((t) => `"${t.pageName}"(${t.activeAdCount})`).join(", ")}`);
+  }
+  if (!tiles.best || tiles.bestScore < 1) return null;
+  return {
+    pageId: tiles.best.pageId,
+    pageName: tiles.best.pageName,
+    activeAdCount: tiles.best.activeAdCount,
+  };
+}
+
+/**
+ * Once we have a page_id, navigate to that brand's ad URL and screenshot
+ * up to MAX_CARDS image ads. Returns ads + image/video counts observed.
+ */
+async function captureAdsForPage(
+  page: import("puppeteer-core").Page,
+  pageId: string,
+  country: string,
+  outputDir: string,
+  prefix: string,
+  log: (msg: string) => void,
+): Promise<{ ads: AdScreenshot[]; videoCount: number; imageCount: number }> {
+  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&view_all_page_id=${pageId}&search_type=page`;
+  log(`brand-ads GOTO page_id=${pageId} country=${country}`);
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  } catch (e) {
+    log(`brand-ads goto failed: ${e instanceof Error ? e.message : e}`);
+    return { ads: [], videoCount: 0, imageCount: 0 };
+  }
+  await page
+    .waitForFunction(
+      () => {
+        const t = document.body.innerText || "";
+        return t.includes("Library ID") || /no ads match/i.test(t);
+      },
+      { timeout: 12000 },
+    )
+    .catch(() => {});
+  await delay(1000);
+
+  // Scroll a few times to load enough cards for screenshotting.
+  let lastHeight = 0;
+  for (let i = 0; i < 6; i++) {
+    await page.evaluate(() => window.scrollBy(0, 1500));
+    await delay(800);
+    const newHeight = await page.evaluate(() => document.body.scrollHeight);
+    if (newHeight === lastHeight && i > 1) break;
+    lastHeight = newHeight;
+  }
+
+  // Tag every card on this page (no name matching needed — every ad here is from this brand).
+  const cardInfo = await page.evaluate(() => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) =>
+        n.textContent?.includes("Library ID") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    const nodes: Node[] = [];
+    let cur = walker.nextNode();
+    while (cur) {
+      nodes.push(cur);
+      cur = walker.nextNode();
+    }
+    const tagged: Set<Element> = new Set();
+    let total = 0;
+    let videos = 0;
+    let images = 0;
+    for (const node of nodes) {
+      let el: Element | null = node.parentElement;
+      while (el && el.parentElement) {
+        const r = el.getBoundingClientRect();
+        if (r.width >= 250 && r.width <= 600 && r.height >= 300) {
+          if (!tagged.has(el)) {
+            let ancestorTagged = false;
+            for (const existing of tagged) {
+              if (existing.contains(el) || el.contains(existing)) {
+                ancestorTagged = true;
+                break;
+              }
+            }
+            if (!ancestorTagged) {
+              const hasVideo = !!el.querySelector("video");
+              if (hasVideo) videos++;
+              else images++;
+              el.setAttribute("data-betteryourads-card", String(total));
+              el.setAttribute("data-betteryourads-type", hasVideo ? "video" : "image");
+              tagged.add(el);
+              total++;
+            }
           }
+          break;
         }
-        return null;
-      })
-      .catch(() => null);
-    console.log(`[meta-ad-scraper] extracted brandPageId=${brandPageId ?? "none"}`);
+        el = el.parentElement;
+      }
+    }
+    return { total, videos, images };
+  });
+  log(`brand-ads tagged ${cardInfo.total} cards (${cardInfo.images} image, ${cardInfo.videos} video)`);
 
-    // Prefer image ads first, then fill with video ads. Max 4 total.
-    const MAX_CARDS = 4;
-    const adCards: { text: string; adType: "video" | "image" }[] = [];
+  const MAX_CARDS = 4;
+  const ads: AdScreenshot[] = [];
+  const seen = new Set<number>();
 
-    // First pass: collect image ads
-    for (let i = 0; i < cardInfo.totalMatched && adCards.length < MAX_CARDS; i++) {
+  // Prefer image cards.
+  const order: ("image" | "video")[] = ["image", "video"];
+  for (const want of order) {
+    for (let i = 0; i < cardInfo.total && ads.length < MAX_CARDS; i++) {
+      if (seen.has(i)) continue;
       const info = await page.evaluate((idx: number) => {
-        const el = document.querySelector(
-          `[data-betteryourads-card="${idx}"]`
-        ) as HTMLElement | null;
+        const el = document.querySelector(`[data-betteryourads-card="${idx}"]`) as HTMLElement | null;
         if (!el) return null;
         return {
           text: el.innerText?.trim().slice(0, 800) || "",
           adType: el.getAttribute("data-betteryourads-type") || "image",
         };
       }, i);
-      if (info && info.text && info.adType === "image") {
-        adCards.push({ text: info.text, adType: "image" });
-      }
-    }
+      if (!info || !info.text || info.adType !== want) continue;
+      seen.add(i);
 
-    // Second pass: fill remaining slots with video ads if needed
-    for (let i = 0; i < cardInfo.totalMatched && adCards.length < MAX_CARDS; i++) {
-      const info = await page.evaluate((idx: number) => {
-        const el = document.querySelector(
-          `[data-betteryourads-card="${idx}"]`
-        ) as HTMLElement | null;
-        if (!el) return null;
-        return {
-          text: el.innerText?.trim().slice(0, 800) || "",
-          adType: el.getAttribute("data-betteryourads-type") || "image",
-        };
-      }, i);
-      if (info && info.text && info.adType === "video") {
-        adCards.push({ text: info.text, adType: "video" });
-      }
-    }
-
-    if (adCards.length === 0) {
-      const matched = cardInfo.videoCount + cardInfo.imageCount;
-      return {
-        success: false,
-        ads: [],
-        totalCount: matched,
-        videoCount: cardInfo.videoCount,
-        imageCount: 0,
-        reason:
-          cardInfo.videoCount > 0
-            ? `${companyName} is running ${cardInfo.videoCount}+ video ads (we only screenshot images).`
-            : `No ads found for "${companyName}" on their official page`,
-      };
-    }
-
-    // Screenshot each ad card using Puppeteer element handles
-    const ads: AdScreenshot[] = [];
-    // We need to find the data-betteryourads-card index for each adCard.
-    // Since adCards were picked from totalMatched, we iterate all indices and
-    // match by text.
-    for (const card of adCards) {
-      const screenshotPath = path.join(
-        outputDir,
-        `${prefix}-ad-${ads.length + 1}.png`
-      );
-
+      const screenshotPath = path.join(outputDir, `${prefix}-ad-${ads.length + 1}.png`);
       try {
-        // Find the specific card by its text signature
-        const handle = await page.evaluateHandle((signature: string) => {
-          const cards = document.querySelectorAll("[data-betteryourads-card]");
-          for (const c of cards) {
-            const t = (c as HTMLElement).innerText || "";
-            if (t.includes(signature)) return c;
-          }
-          return null;
-        }, card.text.slice(0, 60));
-
+        const handle = await page.evaluateHandle((idx: number) => {
+          return document.querySelector(`[data-betteryourads-card="${idx}"]`);
+        }, i);
         const el = handle.asElement();
         if (!el) {
           await handle.dispose();
           continue;
         }
-
         await (el as import("puppeteer-core").ElementHandle<Element>).scrollIntoView();
         await delay(400);
         const buf = Buffer.from(
-          await (el as import("puppeteer-core").ElementHandle<Element>).screenshot({ type: "png" })
+          await (el as import("puppeteer-core").ElementHandle<Element>).screenshot({ type: "png" }),
         );
-        await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
+        await fs.mkdir(outputDir, { recursive: true });
         await fs.writeFile(screenshotPath, buf);
 
-        // Upload to Blob so the stored URL is portable across cold starts.
-        // outputDir is `<jobDir>/ads`, so the second-to-last segment is the
-        // job id. Previously we used slice(-1) which returned the literal
-        // "ads", causing every job's screenshots to overwrite each other at
-        // the same blob URL — so an analysis for a brand with no ads ended
-        // up showing the previous job's ads.
         const segs = outputDir.replace(/\\/g, "/").split("/").filter(Boolean);
         const jobIdLike = segs[segs.length - 2] || segs[segs.length - 1] || "unknown";
         const blobKey = `jobs/${jobIdLike}/ads/${prefix}-ad-${ads.length + 1}.png`;
@@ -575,133 +356,117 @@ async function scrapeMetaAdLibraryInner(
 
         ads.push({
           screenshotPath: uploadedUrl,
-          copyText: card.text,
-          adType: card.adType,
+          copyText: info.text,
+          adType: info.adType as "image" | "video",
           source: "meta-ad-library",
         });
-
         await handle.dispose();
       } catch (e) {
-        console.error(`Failed to screenshot ad:`, e);
+        log(`screenshot card ${i} failed: ${e instanceof Error ? e.message : e}`);
       }
-
       await delay(200);
     }
+  }
+  log(`brand-ads captured ${ads.length} screenshots`);
+  return { ads, videoCount: cardInfo.videos, imageCount: cardInfo.images };
+}
 
-    // Get the TRUE brand ad count by re-querying the brand's view_all_page_id
-    // URL. The keyword search "~N results" header is keyword noise (matches
-    // any ad copy containing the term), e.g. "EatClub" returns ~17,000 across
-    // unrelated AU food/sports advertisers. The view_all_page_id URL filters
-    // to ads from THIS specific advertiser only, giving the accurate count
-    // (e.g. EatClub: ~210).
-    const matchedFromAdvertiser = cardInfo.videoCount + cardInfo.imageCount;
-    let brandCount = 0;
-    // Strategy A: if we got a page_id from a card, query the brand-specific URL
-    if (brandPageId) {
-      try {
-        const brandUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&view_all_page_id=${brandPageId}&search_type=page`;
-        await page.goto(brandUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
-        await page
-          .waitForFunction(
-            () => /~?[\d,]+\s+results?/i.test(document.body.innerText || ""),
-            { timeout: 10000 },
-          )
-          .catch(() => {});
-        await delay(800);
-        brandCount = await page.evaluate(() => {
-          const t = document.body.innerText || "";
-          const m = t.match(/~?([\d,]+)\s+results?/i);
-          return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
-        });
-        console.log(`[meta-ad-scraper] brand-specific count for page_id=${brandPageId}: ${brandCount}`);
-      } catch (e) {
-        console.warn(`[meta-ad-scraper] brand count lookup failed:`, e);
-      }
-    }
+async function scrapeMetaAdLibraryInner(
+  companyName: string,
+  outputDir: string,
+  prefix: string,
+  companyUrl: string | undefined,
+  log: (msg: string) => void,
+  trace: string[],
+): Promise<MetaAdResult> {
+  log(`START companyName="${companyName}" url=${companyUrl ?? "n/a"}`);
+  const browser = await launchBrowser();
 
-    // Strategy B: page-name search. Returns Meta Page tiles, each labelled
-    // with the page name and its active ad count.
-    //
-    // Use the dominant advertiser name extracted from cards if we have it.
-    // The user's input ("Jaecoo Australia") often doesn't match the actual
-    // Facebook Page name ("Omoda Jaecoo Australia"), but the cards expose
-    // the real one. Single attempt — looping multiple candidates eats too
-    // much time budget and was making competitor scrapes time out.
-    if (brandCount === 0) {
-      const query = cardInfo.dominantAdvertiser || companyName;
-      try {
-        const pageSearchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${encodeURIComponent(query)}&search_type=page`;
-        console.log(`[meta-ad-scraper] page-search URL: ${pageSearchUrl}`);
-        await page.goto(pageSearchUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
-        await page
-          .waitForFunction(
-            () => {
-              const t = document.body.innerText || "";
-              return /\d[\d,]*\s+(?:active\s+)?ads?\b/i.test(t) || t.includes("No pages match");
-            },
-            { timeout: 10000 },
-          )
-          .catch(() => {});
-        await delay(1500);
-        const psResult = await page.evaluate((rawName: string) => {
-          const norm = (s: string) =>
-            s.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
-          const target = norm(rawName);
-          const bodyText = document.body.innerText || "";
-          const allCounts: { text: string; count: number }[] = [];
-          const blocks = Array.from(document.querySelectorAll("div"));
-          for (const b of blocks) {
-            const r = (b as HTMLElement).getBoundingClientRect();
-            if (r.width < 200 || r.width > 900 || r.height < 60 || r.height > 600) continue;
-            const t = (b as HTMLElement).innerText || "";
-            if (t.length > 600 || t.length < 5) continue;
-            const tn = norm(t);
-            if (!tn.startsWith(target) && !tn.includes(" " + target)) continue;
-            const m = t.match(/(\d[\d,]*)\s+(?:active\s+)?ads?\b/i);
-            if (m) allCounts.push({ text: t.slice(0, 120), count: parseInt(m[1].replace(/,/g, ""), 10) });
-          }
-          // First any-tile count match as fallback
-          const first = bodyText.match(/(\d[\d,]*)\s+(?:active\s+)?ads?\b/i);
-          return {
-            matchedTiles: allCounts,
-            firstAnyCount: first ? parseInt(first[1].replace(/,/g, ""), 10) : 0,
-            bodyPreview: bodyText.slice(0, 600),
-            blocksScanned: blocks.length,
-          };
-        }, query);
-        const picked = psResult.matchedTiles[0]?.count ?? psResult.firstAnyCount;
-        brandCount = picked > 50_000 ? 0 : picked;
-        console.log(
-          `[meta-ad-scraper] page-search "${query}" → matchedTiles=${JSON.stringify(psResult.matchedTiles)} firstAnyCount=${psResult.firstAnyCount} blocks=${psResult.blocksScanned} picked=${brandCount}`,
-        );
-        if (brandCount === 0) {
-          console.log(`[meta-ad-scraper] page-search body preview: ${psResult.bodyPreview}`);
-        }
-      } catch (e) {
-        console.warn(`[meta-ad-scraper] page-search count lookup failed:`, e);
-      }
-    }
-
-    // Use brand-specific count if we got it. Otherwise fall back to the scanned
-    // count (conservative but accurate). NEVER use the keyword search header —
-    // that's the source of the 17,000 inflation bug.
-    const displayedTotal = brandCount > 0 ? brandCount : matchedFromAdvertiser;
-
-    console.log(
-      `[meta-ad-scraper] DONE companyName="${companyName}" matchedCards=${matchedFromAdvertiser} ads=${ads.length} brandCount=${brandCount} displayedTotal=${displayedTotal}`,
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 900 });
+    await page.setUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
-    return {
-      success: ads.length > 0,
-      ads,
-      totalCount: displayedTotal,
-      videoCount: cardInfo.videoCount,
-      imageCount: cardInfo.imageCount,
-      reason:
-        ads.length > 0
-          ? `Captured ${ads.length} of ${displayedTotal} active ads (showing best image samples)`
-          : "Failed to screenshot ad cards",
+    await page.setExtraHTTPHeaders({ "Accept-Language": "en-US,en;q=0.9" });
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+    });
+
+    const domain = extractDomain(companyUrl);
+    const domainStem = domain ? domain.split(".")[0] : undefined;
+    const primaryCountry = countryFromDomain(domain);
+
+    // Strategy 1: page-search first. Try the most specific country, then broaden.
+    // Country order: derived-from-domain > US > ALL. Skip duplicates.
+    const countryOrder: string[] = [];
+    const pushCountry = (c: string) => {
+      if (!countryOrder.includes(c)) countryOrder.push(c);
     };
+    pushCountry(primaryCountry);
+    pushCountry("US");
+    pushCountry("ALL");
+
+    const searchTerms: string[] = [];
+    const pushTerm = (t?: string) => {
+      if (!t) return;
+      const trimmed = t.trim();
+      if (!trimmed) return;
+      if (!searchTerms.find((x) => x.toLowerCase() === trimmed.toLowerCase())) {
+        searchTerms.push(trimmed);
+      }
+    };
+    pushTerm(companyName);
+    if (domainStem && normalize(domainStem) !== normalize(companyName)) pushTerm(domainStem);
+
+    let foundTile: PageTile | null = null;
+    let foundCountry = primaryCountry;
+    outer: for (const term of searchTerms) {
+      for (const country of countryOrder) {
+        const tile = await findBrandPageTile(page, term, country, log);
+        if (tile) {
+          foundTile = tile;
+          foundCountry = country;
+          break outer;
+        }
+      }
+    }
+
+    if (foundTile) {
+      log(`MATCH page="${foundTile.pageName}" id=${foundTile.pageId} country=${foundCountry} activeAds=${foundTile.activeAdCount}`);
+      const captured = await captureAdsForPage(
+        page,
+        foundTile.pageId,
+        foundCountry,
+        outputDir,
+        prefix,
+        log,
+      );
+      const total = foundTile.activeAdCount || captured.imageCount + captured.videoCount;
+      log(`DONE strategy=page-search ads=${captured.ads.length} brandCount=${total}`);
+      return {
+        success: captured.ads.length > 0,
+        ads: captured.ads,
+        totalCount: total,
+        videoCount: captured.videoCount,
+        imageCount: captured.imageCount,
+        reason:
+          captured.ads.length > 0
+            ? `Found ${total} active ads on ${foundTile.pageName}'s page; captured ${captured.ads.length} samples.`
+            : foundTile.activeAdCount > 0
+              ? `${foundTile.pageName} runs ${foundTile.activeAdCount} active ads but we couldn't grab image samples (likely all video).`
+              : `${foundTile.pageName} is registered on Meta but has no active ads right now.`,
+        trace,
+      };
+    }
+
+    // Strategy 2: keyword fallback. Reach this when no Page tile matched —
+    // the brand may not have a verified Meta page or our matcher missed it.
+    log(`page-search exhausted, falling back to keyword search`);
+    const fallback = await keywordSearchFallback(page, companyName, domain, primaryCountry, outputDir, prefix, log);
+    return { ...fallback, trace };
   } catch (error) {
+    log(`FATAL ${error instanceof Error ? error.message : "Unknown error"}`);
     return {
       success: false,
       ads: [],
@@ -709,8 +474,223 @@ async function scrapeMetaAdLibraryInner(
       videoCount: 0,
       imageCount: 0,
       reason: `Scraping failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      trace,
     };
   } finally {
-    await browser.close();
+    await browser.close().catch(() => {});
   }
+}
+
+async function keywordSearchFallback(
+  page: import("puppeteer-core").Page,
+  companyName: string,
+  domain: string | undefined,
+  primaryCountry: string,
+  outputDir: string,
+  prefix: string,
+  log: (msg: string) => void,
+): Promise<MetaAdResult> {
+  const countries = Array.from(new Set([primaryCountry, "US", "ALL"]));
+  let landed = false;
+  for (const country of countries) {
+    const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&q=${encodeURIComponent(
+      companyName,
+    )}&search_type=keyword_unordered`;
+    log(`keyword GOTO country=${country}`);
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+    } catch (e) {
+      log(`keyword goto failed: ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    await page
+      .waitForFunction(
+        () => {
+          const t = document.body.innerText || "";
+          return t.includes("Library ID") || /no ads match/i.test(t);
+        },
+        { timeout: 10000 },
+      )
+      .catch(() => {});
+    await delay(800);
+    const hasIds = await page.evaluate(() => (document.body.innerText || "").includes("Library ID"));
+    if (hasIds) {
+      landed = true;
+      log(`keyword country=${country} has Library IDs, scrolling`);
+      break;
+    }
+  }
+  if (!landed) {
+    log(`keyword fallback found nothing across ${countries.join(",")}`);
+    return {
+      success: false,
+      ads: [],
+      totalCount: 0,
+      videoCount: 0,
+      imageCount: 0,
+      reason: `No Meta Ad Library results for "${companyName}". They may not run ads on Meta.`,
+    };
+  }
+
+  let lastHeight = 0;
+  for (let i = 0; i < 6; i++) {
+    await page.evaluate(() => window.scrollBy(0, 1500));
+    await delay(800);
+    const newHeight = await page.evaluate(() => document.body.scrollHeight);
+    if (newHeight === lastHeight && i > 1) break;
+    lastHeight = newHeight;
+  }
+
+  // Reuse the strict matcher to filter by name.
+  const cardInfo = await page.evaluate((args: { searchTerm: string; domain?: string }) => {
+    const { searchTerm, domain } = args;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) =>
+        n.textContent?.includes("Library ID") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    const nodes: Node[] = [];
+    let cur = walker.nextNode();
+    while (cur) {
+      nodes.push(cur);
+      cur = walker.nextNode();
+    }
+    const strip = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/\.(ai|io|com|co|app|so|dev|net|org)\b/g, "")
+        .replace(/\b(inc|llc|ltd|corp|company|group)\b/g, "")
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const normTerm = strip(searchTerm);
+    const tagged: Set<Element> = new Set();
+    let total = 0;
+    let videos = 0;
+    let images = 0;
+    for (const node of nodes) {
+      let el: Element | null = node.parentElement;
+      while (el && el.parentElement) {
+        const r = el.getBoundingClientRect();
+        if (r.width >= 250 && r.width <= 600 && r.height >= 300) {
+          if (!tagged.has(el)) {
+            let ancestor = false;
+            for (const existing of tagged) {
+              if (existing.contains(el) || el.contains(existing)) {
+                ancestor = true;
+                break;
+              }
+            }
+            if (!ancestor) {
+              const cardText = (el as HTMLElement).innerText?.toLowerCase() || "";
+              const sponsoredMatch = cardText.match(/([a-z0-9][\w\s.&'-]{2,80})\s*\n?\s*sponsored/i);
+              const advertiserName = sponsoredMatch ? sponsoredMatch[1].trim().toLowerCase() : "";
+              const normAdv = strip(advertiserName);
+              const strictMatch =
+                normAdv === normTerm ||
+                normAdv.startsWith(normTerm + " ") ||
+                normAdv === normTerm.replace(/\s+/g, "");
+              const isShortSingleWord = !normTerm.includes(" ") && normTerm.length <= 8;
+              const escaped = normTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const looseMatch =
+                !isShortSingleWord &&
+                advertiserName.length >= 3 &&
+                normTerm.length >= 2 &&
+                (new RegExp(`\\b${escaped}\\b`).test(normAdv) ||
+                  (normAdv.length >= 3 &&
+                    new RegExp(`\\b${normAdv.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(normTerm)));
+              let domainInCard = false;
+              if (domain) {
+                const cardLower = (el as HTMLElement).innerText?.toLowerCase() || "";
+                if (cardLower.includes(domain)) domainInCard = true;
+              }
+              if (strictMatch || domainInCard || looseMatch) {
+                const hasVideo = !!el.querySelector("video");
+                if (hasVideo) videos++;
+                else images++;
+                el.setAttribute("data-betteryourads-card", String(total));
+                el.setAttribute("data-betteryourads-type", hasVideo ? "video" : "image");
+                tagged.add(el);
+                total++;
+              }
+            }
+          }
+          break;
+        }
+        el = el.parentElement;
+      }
+    }
+    return { total, videos, images };
+  }, { searchTerm: companyName, domain });
+  log(`keyword matched ${cardInfo.total} cards (${cardInfo.images} image, ${cardInfo.videos} video)`);
+
+  if (cardInfo.total === 0) {
+    return {
+      success: false,
+      ads: [],
+      totalCount: 0,
+      videoCount: 0,
+      imageCount: 0,
+      reason: `No matching ads for "${companyName}". They likely aren't running Meta ads under this brand name.`,
+    };
+  }
+
+  const MAX_CARDS = 4;
+  const ads: AdScreenshot[] = [];
+  for (let i = 0; i < cardInfo.total && ads.length < MAX_CARDS; i++) {
+    const info = await page.evaluate((idx: number) => {
+      const el = document.querySelector(`[data-betteryourads-card="${idx}"]`) as HTMLElement | null;
+      if (!el) return null;
+      return {
+        text: el.innerText?.trim().slice(0, 800) || "",
+        adType: el.getAttribute("data-betteryourads-type") || "image",
+      };
+    }, i);
+    if (!info || !info.text) continue;
+    if (info.adType !== "image") continue;
+    try {
+      const handle = await page.evaluateHandle((idx: number) => {
+        return document.querySelector(`[data-betteryourads-card="${idx}"]`);
+      }, i);
+      const el = handle.asElement();
+      if (!el) {
+        await handle.dispose();
+        continue;
+      }
+      await (el as import("puppeteer-core").ElementHandle<Element>).scrollIntoView();
+      await delay(400);
+      const buf = Buffer.from(
+        await (el as import("puppeteer-core").ElementHandle<Element>).screenshot({ type: "png" }),
+      );
+      await fs.mkdir(outputDir, { recursive: true });
+      const screenshotPath = path.join(outputDir, `${prefix}-ad-${ads.length + 1}.png`);
+      await fs.writeFile(screenshotPath, buf);
+      const segs = outputDir.replace(/\\/g, "/").split("/").filter(Boolean);
+      const jobIdLike = segs[segs.length - 2] || segs[segs.length - 1] || "unknown";
+      const blobKey = `jobs/${jobIdLike}/ads/${prefix}-ad-${ads.length + 1}.png`;
+      const uploadedUrl = await putImage(blobKey, buf, "image/png");
+      ads.push({
+        screenshotPath: uploadedUrl,
+        copyText: info.text,
+        adType: "image",
+        source: "meta-ad-library",
+      });
+      await handle.dispose();
+    } catch (e) {
+      log(`keyword screenshot ${i} failed: ${e instanceof Error ? e.message : e}`);
+    }
+    await delay(200);
+  }
+
+  log(`DONE strategy=keyword ads=${ads.length} matchedCards=${cardInfo.total}`);
+  return {
+    success: ads.length > 0,
+    ads,
+    totalCount: cardInfo.total,
+    videoCount: cardInfo.videos,
+    imageCount: cardInfo.images,
+    reason:
+      ads.length > 0
+        ? `Captured ${ads.length} of ${cardInfo.total} matched ads via keyword fallback.`
+        : `Found ${cardInfo.total} matching cards but couldn't screenshot any image ads.`,
+  };
 }

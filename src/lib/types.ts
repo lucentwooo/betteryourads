@@ -259,4 +259,9 @@ export interface Job {
    * don't end up running the same stage concurrently (which spawned two
    * Puppeteer browsers and crashed both with TargetCloseError). */
   stageRunningSince?: string | null;
+  /** Per-brand scraper diagnostic trace. Keyed by the search term passed to
+   * scrapeMetaAdLibrary (company name or competitor name). Persisted to the
+   * job so we can diagnose ad-scraping failures without relying on Vercel
+   * runtime logs (which silently drop most output under load). */
+  scraperTrace?: Record<string, string[]>;
 }

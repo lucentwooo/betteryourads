@@ -278,13 +278,19 @@ async function stageCompanyAds(jobId: string): Promise<void> {
       err instanceof Error
         ? err.message
         : "Meta Ad Library scrape failed",
+    trace: [`pipeline-catch: ${err instanceof Error ? err.message : String(err)}`],
   }));
 
+  const existingTrace = (await getJob(jobId))?.scraperTrace ?? {};
   await updateJob(jobId, {
     companyAds: companyAdsResult.ads,
     companyAdCount: companyAdsResult.totalCount || 0,
     companyVideoCount: companyAdsResult.videoCount || 0,
     companyImageCount: companyAdsResult.imageCount || 0,
+    scraperTrace: {
+      ...existingTrace,
+      [job.input.companyName]: companyAdsResult.trace ?? [],
+    },
   });
 
   if (companyAdsResult.success) {
@@ -332,6 +338,7 @@ async function stageOneCompetitor(jobId: string): Promise<boolean> {
     imageCount: 0,
     reason:
       err instanceof Error ? err.message : "Meta Ad Library scrape failed",
+    trace: [`pipeline-catch: ${err instanceof Error ? err.message : String(err)}`],
   }));
 
   const entry: CompetitorData = {
@@ -342,7 +349,14 @@ async function stageOneCompetitor(jobId: string): Promise<boolean> {
     imageAdCount: competitorResult.imageCount || 0,
   };
 
-  await updateJob(jobId, { competitorData: [...done, entry] });
+  const existingTrace = (await getJob(jobId))?.scraperTrace ?? {};
+  await updateJob(jobId, {
+    competitorData: [...done, entry],
+    scraperTrace: {
+      ...existingTrace,
+      [competitorName]: (competitorResult as { trace?: string[] }).trace ?? [],
+    },
+  });
 
   await addProgress(
     jobId,
