@@ -165,9 +165,14 @@ export async function createTextMessage(
     }
 
     const data = (await response.json()) as {
-      choices?: { message?: { content?: string } }[];
+      choices?: { message?: { content?: string }; finish_reason?: string }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     const text = data.choices?.[0]?.message?.content || "";
+    const finish = data.choices?.[0]?.finish_reason || "?";
+    console.log(
+      `[openrouter] ${OPENROUTER_MODEL} finish=${finish} prompt=${data.usage?.prompt_tokens ?? "?"} completion=${data.usage?.completion_tokens ?? "?"} bytes=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`,
+    );
     return { content: [{ type: "text", text }] };
   } finally {
     clearTimeout(timeout);

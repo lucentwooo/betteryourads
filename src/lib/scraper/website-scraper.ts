@@ -107,24 +107,31 @@ async function scrapeWebsiteInner(
       .catch(() => {});
     await new Promise((r) => setTimeout(r, 400));
 
-    // Progressively scroll the entire page to trigger lazy-loaded sections,
-    // then return to top. Modern marketing sites only render below-fold
-    // content as you scroll past it, so a single short scroll undercounts
-    // page height drastically (ends up screenshotting only the hero).
-    await page
-      .evaluate(async () => {
-        const step = 800;
-        const maxScroll = 12000;
-        for (let y = 0; y <= maxScroll; y += step) {
-          window.scrollTo({ top: y, behavior: "instant" });
-          await new Promise((r) => setTimeout(r, 250));
-          const reached = (document.documentElement.scrollHeight || 0) - window.innerHeight;
-          if (y >= reached) break;
-        }
-        window.scrollTo({ top: 0, behavior: "instant" });
-        await new Promise((r) => setTimeout(r, 400));
-      })
-      .catch(() => {});
+    // Lazy-loaded marketing pages only render below-fold sections AFTER the
+    // viewport reaches them AND after their network requests complete. We
+    // need three things: scroll deep enough to trigger every section, wait
+    // for those sections' images/JS to actually finish loading, then return
+    // to top before screenshotting. Otherwise the measured scrollHeight is
+    // tiny and we screenshot only the hero.
+    let lastHeight = 0;
+    for (let i = 0; i < 15; i++) {
+      const newHeight = await page
+        .evaluate(() => {
+          window.scrollBy(0, 1000);
+          return document.documentElement.scrollHeight;
+        })
+        .catch(() => 0);
+      // Wait for any newly-triggered network requests (lazy images, embeds)
+      // to settle. Best-effort: don't block forever if the page never idles.
+      await page
+        .waitForNetworkIdle({ idleTime: 400, timeout: 2000 })
+        .catch(() => {});
+      if (newHeight === lastHeight && i > 3) break;
+      lastHeight = newHeight;
+    }
+    // Scroll back to top and let any sticky/header repositioning settle.
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" })).catch(() => {});
+    await new Promise((r) => setTimeout(r, 600));
 
     const pageHeight = await page
       .evaluate(() => {
@@ -143,6 +150,7 @@ async function scrapeWebsiteInner(
       900,
       Math.min(Math.ceil(pageHeight), MAX_SCREENSHOT_HEIGHT)
     );
+    console.log(`[website-scraper] measured pageHeight=${pageHeight} captureHeight=${captureHeight}`);
 
     // Capture from the top of the page down to a safe height cap. Puppeteer's
     // fullPage mode can OOM on huge marketing pages in serverless, but a

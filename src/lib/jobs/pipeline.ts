@@ -515,6 +515,14 @@ async function stageStrategist(jobId: string): Promise<void> {
   });
 
   await updateJob(jobId, { diagnosis });
+  // Surface a preview of the raw model output so failures are visible in the
+  // UI without grepping logs. Helps spot truncation, format drift, refusals.
+  await addProgress(
+    jobId,
+    "Strategist raw output",
+    `(${diagnosis.raw?.length ?? 0} chars) ${(diagnosis.raw || "(empty)").slice(0, 280)}`,
+    { agent: "strategist" },
+  );
   await addProgress(jobId, "Diagnosis complete", `QA score ${diagnosis.qa?.score ?? "n/a"}`, { agent: "strategist", qaOutcome: diagnosis.qa?.pass ? "pass" : "escalate" });
 
   await setStatus(jobId, "concept-architecting");
