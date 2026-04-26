@@ -22,7 +22,8 @@ export async function scrapeMetaAdLibrary(
   prefix: string = "company",
   companyUrl?: string
 ): Promise<MetaAdResult> {
-  // Global timeout -- never spend more than 60s per company
+  // Global timeout -- never spend more than 90s per company (covers domain
+  // attempt + name fallback + scroll + screenshot capture)
   const timeoutPromise = new Promise<MetaAdResult>((resolve) =>
     setTimeout(
       () =>
@@ -31,7 +32,7 @@ export async function scrapeMetaAdLibrary(
           ads: [],
           reason: `Timed out searching for ${companyName} ads`,
         }),
-      60000
+      90000
     )
   );
 
@@ -80,42 +81,48 @@ async function scrapeMetaAdLibraryInner(
     // pages ("Linear Assicurazioni", "Linear Z Thailand", etc.).
     // Falls back to exact-phrase name search when no URL provided.
     const domain = extractDomain(companyUrl);
-    const searchQuery = domain || companyName;
-    const searchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q=${encodeURIComponent(searchQuery)}&search_type=keyword_exact_phrase`;
+    // Try domain first (disambiguates common names), then fall back to company
+    // name with unordered keyword match (catches advertisers whose page name
+    // doesn't include the TLD, e.g. "EatClub" advertiser for eatclub.com.au).
+    const attempts: { q: string; type: "keyword_exact_phrase" | "keyword_unordered" }[] = [];
+    if (domain) attempts.push({ q: domain, type: "keyword_exact_phrase" });
+    if (companyName && companyName.toLowerCase() !== (domain || "")) {
+      attempts.push({ q: companyName, type: "keyword_unordered" });
+    }
+    if (attempts.length === 0) attempts.push({ q: companyName, type: "keyword_unordered" });
 
-    // Use domcontentloaded instead of networkidle2 -- Facebook never stops loading
-    await page.goto(searchUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: 15000,
-    });
-
-    // Wait for content to render, but don't wait forever
-    await delay(5000);
-
-    // Check if we got results or a login wall, and extract total count
-    const pageInfo = await page.evaluate(() => {
-      const bodyText = document.body.innerText;
-      if (
-        bodyText.includes("Log in") &&
-        bodyText.includes("Create new account")
-      ) {
-        const mainContent = document.querySelector('[role="main"]') as HTMLElement | null;
-        if (!mainContent || mainContent.innerText.length < 100) {
+    let pageInfo = { hasResults: false, totalCount: 0 };
+    let searchQuery = attempts[0].q;
+    for (const attempt of attempts) {
+      searchQuery = attempt.q;
+      const searchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q=${encodeURIComponent(attempt.q)}&search_type=${attempt.type}`;
+      await page.goto(searchUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: 15000,
+      });
+      await delay(5000);
+      pageInfo = await page.evaluate(() => {
+        const bodyText = document.body.innerText;
+        if (
+          bodyText.includes("Log in") &&
+          bodyText.includes("Create new account")
+        ) {
+          const mainContent = document.querySelector('[role="main"]') as HTMLElement | null;
+          if (!mainContent || mainContent.innerText.length < 100) {
+            return { hasResults: false, totalCount: 0 };
+          }
+        }
+        if (bodyText.includes("No ads match your search")) {
           return { hasResults: false, totalCount: 0 };
         }
-      }
-      if (bodyText.includes("No ads match your search")) {
-        return { hasResults: false, totalCount: 0 };
-      }
-
-      // Try to extract "~30 results" text
-      const countMatch = bodyText.match(/~?([\d,]+)\s+results?/i);
-      const totalCount = countMatch
-        ? parseInt(countMatch[1].replace(/,/g, ""), 10)
-        : 0;
-
-      return { hasResults: true, totalCount };
-    });
+        const countMatch = bodyText.match(/~?([\d,]+)\s+results?/i);
+        const totalCount = countMatch
+          ? parseInt(countMatch[1].replace(/,/g, ""), 10)
+          : 0;
+        return { hasResults: true, totalCount };
+      });
+      if (pageInfo.hasResults) break;
+    }
 
     if (!pageInfo.hasResults) {
       return {

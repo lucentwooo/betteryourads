@@ -18,7 +18,7 @@ import type { BrandProfile, CompetitorData, DiagnosisResult, Job, VoiceOfCustome
 // in serverless can hang indefinitely on the tarball download; without a
 // timeout it chews the whole 300s function budget. We'd rather skip ads
 // for that brand than break the whole pipeline.
-const META_SCRAPE_TIMEOUT_MS = 75_000;
+const META_SCRAPE_TIMEOUT_MS = 105_000;
 const WEBSITE_SCREENSHOT_TIMEOUT_MS = 45_000;
 const STRATEGIST_TIMEOUT_MS = 240_000;
 

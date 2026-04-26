@@ -63,7 +63,7 @@ async function chatRequest(
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
-    opts.timeoutMs ?? 90_000,
+    opts.timeoutMs ?? 220_000,
   );
   try {
     const res = await fetch(OPENROUTER_URL, {
