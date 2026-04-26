@@ -396,8 +396,36 @@ async function scrapeMetaAdLibraryInner(
         }
       }
 
-      return { imageCount: imageCardIndex, videoCount: videoCardCount, totalMatched: totalMatchedCards };
+      // Capture the most common advertiser display name across matched cards.
+      // The user's input ("Jaecoo Australia") often differs from the actual
+      // Facebook Page name ("Omoda Jaecoo Australia"), and the page-name
+      // search needs the actual Page name to find the right brand tile.
+      const advertiserNameCounts: Record<string, number> = {};
+      for (const el of tagged) {
+        const cardText = (el as HTMLElement).innerText || "";
+        const m = cardText.match(/([a-z0-9][\w\s.&'-]{2,80})\s*\n?\s*sponsored/i);
+        if (m) {
+          const name = m[1].trim();
+          advertiserNameCounts[name] = (advertiserNameCounts[name] || 0) + 1;
+        }
+      }
+      let dominantAdvertiser: string | null = null;
+      let bestCount = 0;
+      for (const [name, count] of Object.entries(advertiserNameCounts)) {
+        if (count > bestCount) {
+          bestCount = count;
+          dominantAdvertiser = name;
+        }
+      }
+
+      return {
+        imageCount: imageCardIndex,
+        videoCount: videoCardCount,
+        totalMatched: totalMatchedCards,
+        dominantAdvertiser,
+      };
     }, { searchTerm: companyName, domain });
+    console.log(`[meta-ad-scraper] dominantAdvertiser="${cardInfo.dominantAdvertiser ?? "none"}"`);
 
     // Try to extract the advertiser's Meta page_id from any matched card.
     // Cards sometimes contain links like `?view_all_page_id=123` to the
@@ -568,9 +596,20 @@ async function scrapeMetaAdLibraryInner(
 
     // Strategy B: page-name search. Returns Meta Page tiles, each labelled
     // with the page name and its active ad count.
-    if (brandCount === 0) {
+    //
+    // Try the dominant advertiser name extracted from cards FIRST. The user's
+    // input ("Jaecoo Australia") often doesn't match the actual Facebook Page
+    // name ("Omoda Jaecoo Australia"), but the cards expose the real one.
+    const queryCandidates: string[] = [];
+    if (cardInfo.dominantAdvertiser && cardInfo.dominantAdvertiser.toLowerCase() !== companyName.toLowerCase()) {
+      queryCandidates.push(cardInfo.dominantAdvertiser);
+    }
+    queryCandidates.push(companyName);
+
+    for (const query of queryCandidates) {
+      if (brandCount > 0) break;
       try {
-        const pageSearchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${encodeURIComponent(companyName)}&search_type=page`;
+        const pageSearchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${encodeURIComponent(query)}&search_type=page`;
         console.log(`[meta-ad-scraper] page-search URL: ${pageSearchUrl}`);
         await page.goto(pageSearchUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
         await page
@@ -608,14 +647,11 @@ async function scrapeMetaAdLibraryInner(
             bodyPreview: bodyText.slice(0, 600),
             blocksScanned: blocks.length,
           };
-        }, companyName);
-        // Pick the first matched tile if any, otherwise first any-count.
-        // Cap at 50,000 — Meta sometimes shows truly huge keyword totals on
-        // page-search too (rare); above that, distrust.
+        }, query);
         const picked = psResult.matchedTiles[0]?.count ?? psResult.firstAnyCount;
         brandCount = picked > 50_000 ? 0 : picked;
         console.log(
-          `[meta-ad-scraper] page-search "${companyName}" → matchedTiles=${JSON.stringify(psResult.matchedTiles)} firstAnyCount=${psResult.firstAnyCount} blocks=${psResult.blocksScanned} picked=${brandCount}`,
+          `[meta-ad-scraper] page-search "${query}" → matchedTiles=${JSON.stringify(psResult.matchedTiles)} firstAnyCount=${psResult.firstAnyCount} blocks=${psResult.blocksScanned} picked=${brandCount}`,
         );
         if (brandCount === 0) {
           console.log(`[meta-ad-scraper] page-search body preview: ${psResult.bodyPreview}`);

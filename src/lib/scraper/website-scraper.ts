@@ -60,6 +60,7 @@ async function scrapeWebsiteInner(
   outputDir: string,
   existingBrowser?: Browser
 ): Promise<WebsiteScrapResult> {
+  console.log(`[website-scraper] start url=${url}`);
   const browser = existingBrowser ?? (await launchBrowser());
   const ownBrowser = !existingBrowser;
 
@@ -81,7 +82,9 @@ async function scrapeWebsiteInner(
         waitUntil: "domcontentloaded",
         timeout: 15000,
       });
-    } catch {
+      console.log(`[website-scraper] page.goto OK, landed at ${page.url()}`);
+    } catch (e) {
+      console.warn(`[website-scraper] page.goto failed for ${url}:`, e instanceof Error ? e.message : e);
       // Continue with whatever state rendered.
     }
 
@@ -180,6 +183,7 @@ async function scrapeWebsiteInner(
     await fs.mkdir(outputDir, { recursive: true });
     await fs.writeFile(localScreenshotPath, buffer);
 
+    console.log(`[website-scraper] screenshot OK ${buffer.length} bytes`);
     const blobKey = path.posix.join(
       "jobs",
       ...outputDir.replace(/\\/g, "/").split("/").slice(-1),
