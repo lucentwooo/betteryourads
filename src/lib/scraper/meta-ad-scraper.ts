@@ -32,7 +32,7 @@ export async function scrapeMetaAdLibrary(
           ads: [],
           reason: `Timed out searching for ${companyName} ads`,
         }),
-      110000
+      130000
     )
   );
 
@@ -399,9 +399,11 @@ async function scrapeMetaAdLibraryInner(
       return { imageCount: imageCardIndex, videoCount: videoCardCount, totalMatched: totalMatchedCards };
     }, { searchTerm: companyName, domain });
 
-    // Extract the advertiser's Meta page_id from any matched card. Cards
-    // contain links like `?view_all_page_id=123` to the brand's full ad list.
-    // We need this BEFORE we navigate away to query the true brand count.
+    // Try to extract the advertiser's Meta page_id from any matched card.
+    // Cards sometimes contain links like `?view_all_page_id=123` to the
+    // brand's full ad list. Often they don't (Meta links by page username
+    // instead of numeric ID), in which case we fall back to a search_type=page
+    // query later.
     const brandPageId = await page
       .evaluate(() => {
         const cards = document.querySelectorAll("[data-betteryourads-card]");
@@ -535,6 +537,7 @@ async function scrapeMetaAdLibraryInner(
     // (e.g. EatClub: ~210).
     const matchedFromAdvertiser = cardInfo.videoCount + cardInfo.imageCount;
     let brandCount = 0;
+    // Strategy A: if we got a page_id from a card, query the brand-specific URL
     if (brandPageId) {
       try {
         const brandUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&view_all_page_id=${brandPageId}&search_type=page`;
@@ -554,6 +557,54 @@ async function scrapeMetaAdLibraryInner(
         console.log(`[meta-ad-scraper] brand-specific count for page_id=${brandPageId}: ${brandCount}`);
       } catch (e) {
         console.warn(`[meta-ad-scraper] brand count lookup failed:`, e);
+      }
+    }
+
+    // Strategy B: page-name search. Returns Meta Page tiles, each labelled
+    // with the page name and its active ad count (e.g. "EatClub · 210 ads").
+    // This is Meta's intended way to look up "how many ads is this brand
+    // running" — and it works without needing the numeric page_id.
+    if (brandCount === 0) {
+      try {
+        const pageSearchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${encodeURIComponent(companyName)}&search_type=page`;
+        await page.goto(pageSearchUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+        await page
+          .waitForFunction(
+            () => {
+              const t = document.body.innerText || "";
+              return /\d[\d,]*\s+(?:active\s+)?ads?\b/i.test(t) || t.includes("No pages match");
+            },
+            { timeout: 10000 },
+          )
+          .catch(() => {});
+        await delay(1000);
+        brandCount = await page.evaluate((rawName: string) => {
+          const norm = (s: string) =>
+            s.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+          const target = norm(rawName);
+          // Walk every visible block of reasonable card size; find one whose
+          // text starts with the brand name and contains "N ads"/"N active ads".
+          const blocks = Array.from(document.querySelectorAll("div"));
+          for (const b of blocks) {
+            const r = (b as HTMLElement).getBoundingClientRect();
+            if (r.width < 200 || r.width > 900 || r.height < 60 || r.height > 600) continue;
+            const t = (b as HTMLElement).innerText || "";
+            if (t.length > 600) continue;
+            const tn = norm(t);
+            if (!tn.startsWith(target) && !tn.includes(" " + target)) continue;
+            const m = t.match(/(\d[\d,]*)\s+(?:active\s+)?ads?\b/i);
+            if (m) return parseInt(m[1].replace(/,/g, ""), 10);
+          }
+          // Last-resort: first ad count anywhere on the page (the page-search
+          // result list usually has only matching brands).
+          const first = (document.body.innerText || "").match(
+            /(\d[\d,]*)\s+(?:active\s+)?ads?\b/i,
+          );
+          return first ? parseInt(first[1].replace(/,/g, ""), 10) : 0;
+        }, companyName);
+        console.log(`[meta-ad-scraper] page-search count for "${companyName}": ${brandCount}`);
+      } catch (e) {
+        console.warn(`[meta-ad-scraper] page-search count lookup failed:`, e);
       }
     }
 
