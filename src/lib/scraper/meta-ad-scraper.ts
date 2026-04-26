@@ -680,6 +680,9 @@ async function scrapeMetaAdLibraryInner(
     // that's the source of the 17,000 inflation bug.
     const displayedTotal = brandCount > 0 ? brandCount : matchedFromAdvertiser;
 
+    console.log(
+      `[meta-ad-scraper] DONE companyName="${companyName}" matchedCards=${matchedFromAdvertiser} ads=${ads.length} brandCount=${brandCount} displayedTotal=${displayedTotal}`,
+    );
     return {
       success: ads.length > 0,
       ads,
