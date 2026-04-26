@@ -22,7 +22,12 @@ export interface WebsiteScrapResult {
 // function budget. The pipeline treats screenshot failures as recoverable
 // and falls back to plain HTML extraction.
 const SCRAPE_TIMEOUT_MS = 75_000;
-const MAX_SCREENSHOT_HEIGHT = 8000;
+// 3500px is enough for hero + 1-2 sections, which is what brand color
+// extraction needs. Going higher (we used to use 8000) OOMs Chromium on
+// Vercel serverless and crashes the page mid-screenshot with a
+// TargetCloseError. The text content (headings, body) is still pulled
+// from the full DOM, so we don't lose anything by clipping the visual.
+const MAX_SCREENSHOT_HEIGHT = 3500;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -169,17 +174,25 @@ async function scrapeWebsiteInner(
     );
     console.log(`[website-scraper] measured pageHeight=${pageHeight} captureHeight=${captureHeight} finalUrl=${page.url()}`);
 
-    // Capture from the top of the page down to a safe height cap. Puppeteer's
-    // fullPage mode can OOM on huge marketing pages in serverless, but a
-    // clipped capture still gives the UI and brand analysis a real website
-    // screenshot instead of an og:image stand-in.
-    const buffer = Buffer.from(
-      await page.screenshot({
-        type: "png",
-        clip: { x: 0, y: 0, width: 1440, height: captureHeight },
-      })
-    );
-    const localScreenshotPath = path.join(outputDir, "website-screenshot.png");
+    // Capture as JPEG at moderate quality. PNG of a tall page is several MB
+    // of raw pixel data that round-trips through the Chromium DevTools
+    // protocol — that's what was killing the page session with
+    // TargetCloseError on Vercel serverless. Brand colour extraction works
+    // fine off JPEG.
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(
+        await page.screenshot({
+          type: "jpeg",
+          quality: 80,
+          clip: { x: 0, y: 0, width: 1440, height: captureHeight },
+        })
+      );
+    } catch (e) {
+      console.warn(`[website-scraper] screenshot failed: ${e instanceof Error ? e.message : e}`);
+      throw e;
+    }
+    const localScreenshotPath = path.join(outputDir, "website-screenshot.jpg");
     await fs.mkdir(outputDir, { recursive: true });
     await fs.writeFile(localScreenshotPath, buffer);
 
@@ -187,9 +200,9 @@ async function scrapeWebsiteInner(
     const blobKey = path.posix.join(
       "jobs",
       ...outputDir.replace(/\\/g, "/").split("/").slice(-1),
-      "website-screenshot.png"
+      "website-screenshot.jpg"
     );
-    const screenshotUrl = await putImage(blobKey, buffer, "image/png");
+    const screenshotUrl = await putImage(blobKey, buffer, "image/jpeg");
 
     const pageData = await page.evaluate(() => {
       const title = document.title || "";
