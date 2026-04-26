@@ -128,7 +128,15 @@ async function scrapeMetaAdLibraryInner(
     const attempts: { q: string; type: "keyword_exact_phrase" | "keyword_unordered"; country: string }[] = [];
     if (companyName) {
       attempts.push({ q: companyName, type: "keyword_unordered", country: countryCode });
-      if (countryCode !== "ALL") attempts.push({ q: companyName, type: "keyword_unordered", country: "ALL" });
+      // For brands without a regional domain, also try US explicitly. ALL
+      // theoretically includes US but in practice Meta gates many advertisers
+      // (e.g. US-only brands like Stripe) behind a country=US search.
+      if (countryCode === "ALL") {
+        attempts.push({ q: companyName, type: "keyword_unordered", country: "US" });
+      } else {
+        attempts.push({ q: companyName, type: "keyword_unordered", country: "ALL" });
+        attempts.push({ q: companyName, type: "keyword_unordered", country: "US" });
+      }
     }
     if (domainStem && domainStem.toLowerCase() !== companyName.toLowerCase()) {
       attempts.push({ q: domainStem, type: "keyword_unordered", country: countryCode });
@@ -347,20 +355,19 @@ async function scrapeMetaAdLibraryInner(
                   normAdvertiser.startsWith(normTerm + " ") ||
                   normAdvertiser === normTerm.replace(/\s+/g, "");
 
+                // Loose match: search term appears as a word inside advertiser
+                // name OR vice versa. Disabled for short single-word terms —
+                // "Square" would otherwise tag "Lava Cake by Lemon Square",
+                // "Apple" would tag "Big Apple Foods", etc. For multi-word or
+                // 9+ char names, collisions are rare enough to allow loose.
+                const isShortSingleWord =
+                  !normTerm.includes(" ") && normTerm.length <= 8;
                 const looseNameMatch =
+                  !isShortSingleWord &&
                   advertiserName.length >= 3 &&
                   normTerm.length >= 2 &&
                   (termInAdvertiser || advertiserInTerm);
 
-                // Match policy:
-                //  - Exact name match always wins (advertiser == search term).
-                //  - Domain-in-card is a strong positive signal when present.
-                //  - Otherwise accept loose name match. Meta Ad Library cards
-                //    rarely include the full domain in visible text — the
-                //    advertiser's Facebook page name is what's shown — so
-                //    requiring domainInCard would zero-out most legit results
-                //    (e.g. EatClub at eatclub.com.au shows page name "EatClub"
-                //    with no domain text).
                 const matches =
                   strictNameMatch || domainInCard || looseNameMatch;
 
