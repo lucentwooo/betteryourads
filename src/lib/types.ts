@@ -254,4 +254,9 @@ export interface Job {
   error?: string;
   createdAt: string;
   completedAt?: string;
+  /** ISO timestamp set when a pipeline stage begins; cleared when it ends.
+   * Used as a lightweight lock so /api/analyze and /api/jobs/.../advance
+   * don't end up running the same stage concurrently (which spawned two
+   * Puppeteer browsers and crashed both with TargetCloseError). */
+  stageRunningSince?: string | null;
 }

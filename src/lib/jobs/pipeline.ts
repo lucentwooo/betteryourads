@@ -581,9 +581,28 @@ async function stageCreativeDirector(jobId: string): Promise<void> {
   }
 }
 
+// Stages that spawn a Puppeteer browser. If two of these run concurrently
+// for the same job they fight for memory and crash each other with
+// TargetCloseError. The stageRunningSince lock guards them.
+const STAGE_LOCK_TTL_MS = 240_000;
+
 export async function runNextStage(jobId: string): Promise<StageResult> {
   const job = await getJob(jobId);
   if (!job) return { done: true };
+
+  // If another invocation started a stage recently and hasn't released the
+  // lock yet, bail out. The caller will simply poll again.
+  if (job.stageRunningSince) {
+    const startedMs = Date.parse(job.stageRunningSince);
+    if (!Number.isNaN(startedMs) && Date.now() - startedMs < STAGE_LOCK_TTL_MS) {
+      console.log(
+        `[pipeline] runNextStage(${jobId}) skipped — stage already running since ${job.stageRunningSince}`,
+      );
+      return { done: false };
+    }
+  }
+
+  await updateJob(jobId, { stageRunningSince: new Date().toISOString() });
 
   try {
     switch (job.status) {
@@ -624,6 +643,8 @@ export async function runNextStage(jobId: string): Promise<StageResult> {
     await setStatus(jobId, "error");
     await addProgress(jobId, "Error", errorMessage);
     return { done: true };
+  } finally {
+    await updateJob(jobId, { stageRunningSince: null });
   }
 }
 
