@@ -148,31 +148,59 @@ async function scrapeMetaAdLibraryInner(
         waitUntil: "domcontentloaded",
         timeout: 15000,
       });
-      await delay(5000);
+      // Wait for either the results header ("~N results" / "No ads match") or
+      // a Library ID text node — whichever appears first. Flat sleeps miss
+      // slow loads and waste time on fast ones.
+      await page
+        .waitForFunction(
+          () => {
+            const t = document.body.innerText || "";
+            return (
+              /~?[\d,]+\s+results?/i.test(t) ||
+              t.includes("No ads match your search") ||
+              t.includes("Library ID")
+            );
+          },
+          { timeout: 12000 },
+        )
+        .catch(() => {});
+      await delay(1500);
       const result = await page.evaluate(() => {
-        const bodyText = document.body.innerText;
+        const bodyText = document.body.innerText || "";
+        const mainContent = document.querySelector('[role="main"]') as HTMLElement | null;
+        const mainText = mainContent?.innerText || "";
+        // Login wall: page is the auth gate, not the ad library results UI.
+        // Detected by login form being the dominant content AND no Library IDs
+        // anywhere in the page.
         if (
           bodyText.includes("Log in") &&
-          bodyText.includes("Create new account")
+          bodyText.includes("Create new account") &&
+          !bodyText.includes("Library ID") &&
+          (!mainContent || mainText.length < 200)
         ) {
-          const mainContent = document.querySelector('[role="main"]') as HTMLElement | null;
-          if (!mainContent || mainContent.innerText.length < 100) {
-            return { hasResults: false, totalCount: 0, preview: bodyText.slice(0, 200) };
-          }
+          return { hasResults: false, totalCount: 0, blocked: "login-wall", preview: bodyText.slice(0, 300) };
         }
         if (bodyText.includes("No ads match your search")) {
-          return { hasResults: false, totalCount: 0, preview: bodyText.slice(0, 200) };
+          return { hasResults: false, totalCount: 0, blocked: "no-match", preview: bodyText.slice(0, 300) };
         }
         const countMatch = bodyText.match(/~?([\d,]+)\s+results?/i);
         const totalCount = countMatch
           ? parseInt(countMatch[1].replace(/,/g, ""), 10)
           : 0;
-        return { hasResults: true, totalCount, preview: bodyText.slice(0, 200) };
+        // Treat "Library ID" presence as ground truth for "ads loaded",
+        // even when the count header didn't render.
+        const hasLibraryIds = bodyText.includes("Library ID");
+        return {
+          hasResults: hasLibraryIds || totalCount > 0,
+          totalCount,
+          blocked: null,
+          preview: bodyText.slice(0, 300),
+        };
       });
       lastBodyPreview = result.preview;
       pageInfo = { hasResults: result.hasResults, totalCount: result.totalCount };
       console.log(
-        `[meta-ad-scraper] try q="${attempt.q}" type=${attempt.type} country=${attempt.country} → hasResults=${result.hasResults} count=${result.totalCount}`,
+        `[meta-ad-scraper] try q="${attempt.q}" type=${attempt.type} country=${attempt.country} → hasResults=${result.hasResults} count=${result.totalCount} blocked=${result.blocked ?? "no"}`,
       );
       if (pageInfo.hasResults) break;
     }
@@ -303,19 +331,22 @@ async function scrapeMetaAdLibraryInner(
                   normAdvertiser.startsWith(normTerm + " ") ||
                   normAdvertiser === normTerm.replace(/\s+/g, "");
 
-                // When a domain is known, REQUIRE domainInCard — strictNameMatch
-                // alone is not enough because generic words like "Linear"
-                // legitimately prefix unrelated brands ("Linear Assicurazioni").
-                // Only fall back to name matching when no domain was supplied.
                 const looseNameMatch =
-                  !domain &&
                   advertiserName.length >= 3 &&
                   normTerm.length >= 2 &&
                   (termInAdvertiser || advertiserInTerm);
 
-                const matches = domain
-                  ? domainInCard
-                  : strictNameMatch || looseNameMatch;
+                // Match policy:
+                //  - Exact name match always wins (advertiser == search term).
+                //  - Domain-in-card is a strong positive signal when present.
+                //  - Otherwise accept loose name match. Meta Ad Library cards
+                //    rarely include the full domain in visible text — the
+                //    advertiser's Facebook page name is what's shown — so
+                //    requiring domainInCard would zero-out most legit results
+                //    (e.g. EatClub at eatclub.com.au shows page name "EatClub"
+                //    with no domain text).
+                const matches =
+                  strictNameMatch || domainInCard || looseNameMatch;
 
                 if (matches) {
                   totalMatchedCards++;

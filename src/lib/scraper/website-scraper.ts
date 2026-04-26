@@ -87,17 +87,20 @@ async function scrapeWebsiteInner(
 
     await new Promise((r) => setTimeout(r, 1500));
 
-    // Try to dismiss cookie banners (best-effort, guarded against hangs)
+    // Try to dismiss cookie banners. Restrict to <button> only — clicking <a>
+    // tags whose text happens to contain "accept" or "got it" can navigate the
+    // page away from the homepage entirely (e.g. /accept-terms), and the
+    // subsequent screenshot captures the wrong page.
+    const urlBefore = page.url();
     await page
       .evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll("button, a"));
+        const buttons = Array.from(document.querySelectorAll("button"));
         for (const btn of buttons) {
-          const text = (btn as HTMLElement).innerText?.toLowerCase() || "";
+          const text = (btn as HTMLElement).innerText?.toLowerCase().trim() || "";
+          // Strict word-boundary match. "accept" alone is ambiguous; require
+          // typical cookie-banner phrasing.
           if (
-            text.includes("accept") ||
-            text.includes("allow all") ||
-            text.includes("got it") ||
-            text.includes("dismiss")
+            /^(accept|accept all|accept cookies|allow all|allow cookies|got it|i agree|ok|dismiss)$/i.test(text)
           ) {
             (btn as HTMLElement).click();
             break;
@@ -106,6 +109,17 @@ async function scrapeWebsiteInner(
       })
       .catch(() => {});
     await new Promise((r) => setTimeout(r, 400));
+    // If something we clicked navigated away, recover by re-navigating to the
+    // original URL. Otherwise the screenshot is of the wrong page.
+    if (page.url() !== urlBefore) {
+      console.log(`[website-scraper] cookie click navigated away (${page.url()}); restoring ${url}`);
+      try {
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+        await new Promise((r) => setTimeout(r, 1000));
+      } catch {
+        /* keep whatever rendered */
+      }
+    }
 
     // Lazy-loaded marketing pages only render below-fold sections AFTER the
     // viewport reaches them AND after their network requests complete. We
@@ -150,7 +164,7 @@ async function scrapeWebsiteInner(
       900,
       Math.min(Math.ceil(pageHeight), MAX_SCREENSHOT_HEIGHT)
     );
-    console.log(`[website-scraper] measured pageHeight=${pageHeight} captureHeight=${captureHeight}`);
+    console.log(`[website-scraper] measured pageHeight=${pageHeight} captureHeight=${captureHeight} finalUrl=${page.url()}`);
 
     // Capture from the top of the page down to a safe height cap. Puppeteer's
     // fullPage mode can OOM on huge marketing pages in serverless, but a
