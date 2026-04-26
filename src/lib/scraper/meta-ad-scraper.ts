@@ -214,6 +214,15 @@ async function findBrandPageTile(
   if (tiles.tiles.length > 0 && tiles.tiles.length <= 5) {
     log(`page-search tiles: ${tiles.tiles.map((t) => `"${t.pageName}"(${t.activeAdCount})`).join(", ")}`);
   }
+  if (tiles.tiles.length === 0) {
+    // Dump body preview so we can tell if Meta is showing a login wall,
+    // a "no results" message, or actual page tiles we failed to parse.
+    const bodyPreview = await page.evaluate(() => {
+      const t = (document.body.innerText || "").replace(/\s+/g, " ").trim();
+      return t.slice(0, 350);
+    }).catch(() => "");
+    log(`page-search body preview: ${bodyPreview}`);
+  }
   if (!tiles.best || tiles.bestScore < 1) return null;
   return {
     pageId: tiles.best.pageId,

@@ -282,6 +282,7 @@ async function stageCompanyAds(jobId: string): Promise<void> {
   }));
 
   const existingTrace = (await getJob(jobId))?.scraperTrace ?? {};
+  const trace = (companyAdsResult as { trace?: string[] }).trace ?? [];
   await updateJob(jobId, {
     companyAds: companyAdsResult.ads,
     companyAdCount: companyAdsResult.totalCount || 0,
@@ -289,9 +290,19 @@ async function stageCompanyAds(jobId: string): Promise<void> {
     companyImageCount: companyAdsResult.imageCount || 0,
     scraperTrace: {
       ...existingTrace,
-      [job.input.companyName]: companyAdsResult.trace ?? [],
+      [job.input.companyName]: trace,
     },
   });
+  // Surface the trace inside progress[] too — Vercel KV occasionally drops
+  // unknown top-level fields on round-trip and progress[] is the only place
+  // we know is durably persisted and visible via the UI.
+  if (trace.length > 0) {
+    await addProgress(
+      jobId,
+      "Ad scraper trace",
+      trace.join(" | "),
+    );
+  }
 
   if (companyAdsResult.success) {
     await addProgress(
@@ -350,13 +361,21 @@ async function stageOneCompetitor(jobId: string): Promise<boolean> {
   };
 
   const existingTrace = (await getJob(jobId))?.scraperTrace ?? {};
+  const compTrace = (competitorResult as { trace?: string[] }).trace ?? [];
   await updateJob(jobId, {
     competitorData: [...done, entry],
     scraperTrace: {
       ...existingTrace,
-      [competitorName]: (competitorResult as { trace?: string[] }).trace ?? [],
+      [competitorName]: compTrace,
     },
   });
+  if (compTrace.length > 0) {
+    await addProgress(
+      jobId,
+      `${competitorName} scraper trace`,
+      compTrace.join(" | "),
+    );
+  }
 
   await addProgress(
     jobId,
