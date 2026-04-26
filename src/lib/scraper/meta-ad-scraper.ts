@@ -597,17 +597,13 @@ async function scrapeMetaAdLibraryInner(
     // Strategy B: page-name search. Returns Meta Page tiles, each labelled
     // with the page name and its active ad count.
     //
-    // Try the dominant advertiser name extracted from cards FIRST. The user's
-    // input ("Jaecoo Australia") often doesn't match the actual Facebook Page
-    // name ("Omoda Jaecoo Australia"), but the cards expose the real one.
-    const queryCandidates: string[] = [];
-    if (cardInfo.dominantAdvertiser && cardInfo.dominantAdvertiser.toLowerCase() !== companyName.toLowerCase()) {
-      queryCandidates.push(cardInfo.dominantAdvertiser);
-    }
-    queryCandidates.push(companyName);
-
-    for (const query of queryCandidates) {
-      if (brandCount > 0) break;
+    // Use the dominant advertiser name extracted from cards if we have it.
+    // The user's input ("Jaecoo Australia") often doesn't match the actual
+    // Facebook Page name ("Omoda Jaecoo Australia"), but the cards expose
+    // the real one. Single attempt — looping multiple candidates eats too
+    // much time budget and was making competitor scrapes time out.
+    if (brandCount === 0) {
+      const query = cardInfo.dominantAdvertiser || companyName;
       try {
         const pageSearchUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&q=${encodeURIComponent(query)}&search_type=page`;
         console.log(`[meta-ad-scraper] page-search URL: ${pageSearchUrl}`);
