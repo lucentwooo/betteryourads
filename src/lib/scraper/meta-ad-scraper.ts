@@ -32,7 +32,7 @@ export async function scrapeMetaAdLibrary(
           ads: [],
           reason: `Timed out searching for ${companyName} ads`,
         }),
-      90000
+      110000
     )
   );
 
@@ -399,6 +399,25 @@ async function scrapeMetaAdLibraryInner(
       return { imageCount: imageCardIndex, videoCount: videoCardCount, totalMatched: totalMatchedCards };
     }, { searchTerm: companyName, domain });
 
+    // Extract the advertiser's Meta page_id from any matched card. Cards
+    // contain links like `?view_all_page_id=123` to the brand's full ad list.
+    // We need this BEFORE we navigate away to query the true brand count.
+    const brandPageId = await page
+      .evaluate(() => {
+        const cards = document.querySelectorAll("[data-betteryourads-card]");
+        for (const c of cards) {
+          const links = c.querySelectorAll("a[href]");
+          for (const a of links) {
+            const href = (a as HTMLAnchorElement).href || "";
+            const m = href.match(/view_all_page_id=(\d+)/);
+            if (m) return m[1];
+          }
+        }
+        return null;
+      })
+      .catch(() => null);
+    console.log(`[meta-ad-scraper] extracted brandPageId=${brandPageId ?? "none"}`);
+
     // Prefer image ads first, then fill with video ads. Max 4 total.
     const MAX_CARDS = 4;
     const adCards: { text: string; adType: "video" | "image" }[] = [];
@@ -508,15 +527,40 @@ async function scrapeMetaAdLibraryInner(
       await delay(200);
     }
 
-    // Prefer the Meta Ad Library "~N results" header for the displayed total —
-    // that's the true count for this advertiser/keyword (e.g. EatClub: 210).
-    // Our scanned count caps out at however many cards loaded during the
-    // bounded scroll loop, so showing it as "total" understates reality and
-    // makes us look uninformed. Fall back to scanned count only when the
-    // header didn't render.
+    // Get the TRUE brand ad count by re-querying the brand's view_all_page_id
+    // URL. The keyword search "~N results" header is keyword noise (matches
+    // any ad copy containing the term), e.g. "EatClub" returns ~17,000 across
+    // unrelated AU food/sports advertisers. The view_all_page_id URL filters
+    // to ads from THIS specific advertiser only, giving the accurate count
+    // (e.g. EatClub: ~210).
     const matchedFromAdvertiser = cardInfo.videoCount + cardInfo.imageCount;
-    const displayedTotal =
-      pageInfo.totalCount > 0 ? pageInfo.totalCount : matchedFromAdvertiser;
+    let brandCount = 0;
+    if (brandPageId) {
+      try {
+        const brandUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${countryCode}&view_all_page_id=${brandPageId}&search_type=page`;
+        await page.goto(brandUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+        await page
+          .waitForFunction(
+            () => /~?[\d,]+\s+results?/i.test(document.body.innerText || ""),
+            { timeout: 10000 },
+          )
+          .catch(() => {});
+        await delay(800);
+        brandCount = await page.evaluate(() => {
+          const t = document.body.innerText || "";
+          const m = t.match(/~?([\d,]+)\s+results?/i);
+          return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+        });
+        console.log(`[meta-ad-scraper] brand-specific count for page_id=${brandPageId}: ${brandCount}`);
+      } catch (e) {
+        console.warn(`[meta-ad-scraper] brand count lookup failed:`, e);
+      }
+    }
+
+    // Use brand-specific count if we got it. Otherwise fall back to the scanned
+    // count (conservative but accurate). NEVER use the keyword search header —
+    // that's the source of the 17,000 inflation bug.
+    const displayedTotal = brandCount > 0 ? brandCount : matchedFromAdvertiser;
 
     return {
       success: ads.length > 0,
