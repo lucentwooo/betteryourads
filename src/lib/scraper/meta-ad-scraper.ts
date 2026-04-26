@@ -232,6 +232,135 @@ async function findBrandPageTile(
 }
 
 /**
+ * Strategy 2: harvest page_ids from rendered ad cards on a keyword-search
+ * results page. Meta no longer honors search_type=page in the URL (always
+ * serves keyword view), but every ad card still contains a link to
+ * view_all_page_id=NNN. Walking those links + each card's page name lets
+ * us reconstruct what the Pages tab would have given us.
+ */
+async function harvestPageIdFromKeywordResults(
+  page: import("puppeteer-core").Page,
+  searchTerm: string,
+  country: string,
+  log: (msg: string) => void,
+): Promise<PageTile | null> {
+  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&q=${encodeURIComponent(
+    searchTerm,
+  )}&search_type=keyword_unordered`;
+  log(`harvest GOTO country=${country} q="${searchTerm}"`);
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  } catch (e) {
+    log(`harvest goto failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+  await page
+    .waitForFunction(() => (document.body.innerText || "").includes("Library ID"), { timeout: 12000 })
+    .catch(() => {});
+  await delay(800);
+
+  // Scroll to load more cards. More cards → more page_id samples → better odds
+  // of finding the brand's actual page even when results are mostly noise.
+  let lastHeight = 0;
+  for (let i = 0; i < 8; i++) {
+    await page.evaluate(() => window.scrollBy(0, 1500));
+    await delay(700);
+    const newHeight = await page.evaluate(() => document.body.scrollHeight);
+    if (newHeight === lastHeight && i > 2) break;
+    lastHeight = newHeight;
+  }
+
+  const harvest = await page.evaluate((rawTerm: string) => {
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/\.(ai|io|com|co|app|so|dev|net|org)\b/g, "")
+        .replace(/\b(inc|llc|ltd|corp|company|group)\b/g, "")
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const target = norm(rawTerm);
+    const UI_LABELS = new Set([
+      "see ad details",
+      "see summary details",
+      "active",
+      "inactive",
+      "ad library",
+      "sponsored",
+    ]);
+
+    const seen = new Map<string, { pageName: string; count: number }>();
+    const links = Array.from(document.querySelectorAll("a[href*='view_all_page_id=']"));
+    for (const a of links) {
+      const href = (a as HTMLAnchorElement).href || "";
+      const m = href.match(/view_all_page_id=(\d+)/);
+      if (!m) continue;
+      const pageId = m[1];
+
+      // Walk up to find the card this link belongs to.
+      let el: Element | null = a;
+      let pageName = "";
+      while (el && el.parentElement) {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (r.width >= 250 && r.width <= 700 && r.height >= 200) {
+          const text = (el as HTMLElement).innerText || "";
+          const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+          const sIdx = lines.findIndex((l) => l.toLowerCase() === "sponsored");
+          if (sIdx > 0) {
+            for (let j = sIdx - 1; j >= 0 && j >= sIdx - 4; j--) {
+              const cand = lines[j];
+              if (!cand || UI_LABELS.has(cand.toLowerCase())) continue;
+              if (cand.length < 2 || cand.length > 80) continue;
+              if (/[.!?]\s/.test(cand)) continue;
+              pageName = cand;
+              break;
+            }
+          }
+          break;
+        }
+        el = el.parentElement;
+      }
+      if (!pageName) continue;
+      const prev = seen.get(pageId);
+      if (prev) prev.count++;
+      else seen.set(pageId, { pageName, count: 1 });
+    }
+
+    // Score: exact match >> startswith >> word-contains. Add a small frequency
+    // boost so a brand running 50 ads beats a 1-off mention.
+    let best: { pageId: string; pageName: string; count: number; score: number } | null = null;
+    for (const [pageId, info] of seen) {
+      const np = norm(info.pageName);
+      let score = 0;
+      if (np === target) score = 100;
+      else if (np.startsWith(target + " ") || np.endsWith(" " + target)) score = 60;
+      else if (new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(np)) score = 30;
+      else continue;
+      score += Math.min(info.count, 20);
+      if (!best || score > best.score) {
+        best = { pageId, pageName: info.pageName, count: info.count, score };
+      }
+    }
+    const sample = Array.from(seen.entries())
+      .slice(0, 12)
+      .map(([id, info]) => `"${info.pageName}"x${info.count}`);
+    return { unique: seen.size, best, sample };
+  }, searchTerm);
+
+  log(`harvest unique=${harvest.unique} sample: ${harvest.sample.join(", ")}`);
+  if (!harvest.best) {
+    log(`harvest no advertiser matched "${searchTerm}"`);
+    return null;
+  }
+  log(`harvest BEST "${harvest.best.pageName}" id=${harvest.best.pageId} count=${harvest.best.count} score=${harvest.best.score}`);
+  return {
+    pageId: harvest.best.pageId,
+    pageName: harvest.best.pageName,
+    activeAdCount: 0, // unknown — captureAdsForPage reads it from brand URL
+  };
+}
+
+/**
  * Once we have a page_id, navigate to that brand's ad URL and screenshot
  * up to MAX_CARDS image ads. Returns ads + image/video counts observed.
  */
@@ -242,25 +371,35 @@ async function captureAdsForPage(
   outputDir: string,
   prefix: string,
   log: (msg: string) => void,
-): Promise<{ ads: AdScreenshot[]; videoCount: number; imageCount: number }> {
+): Promise<{ ads: AdScreenshot[]; videoCount: number; imageCount: number; brandCount: number }> {
   const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&view_all_page_id=${pageId}&search_type=page`;
   log(`brand-ads GOTO page_id=${pageId} country=${country}`);
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
   } catch (e) {
     log(`brand-ads goto failed: ${e instanceof Error ? e.message : e}`);
-    return { ads: [], videoCount: 0, imageCount: 0 };
+    return { ads: [], videoCount: 0, imageCount: 0, brandCount: 0 };
   }
   await page
     .waitForFunction(
       () => {
         const t = document.body.innerText || "";
-        return t.includes("Library ID") || /no ads match/i.test(t);
+        return /~?[\d,]+\s+results?/i.test(t) || t.includes("Library ID") || /no ads match/i.test(t);
       },
       { timeout: 12000 },
     )
     .catch(() => {});
   await delay(1000);
+
+  // Read the brand's active ad count straight from the page header.
+  // On view_all_page_id pages this is the TRUE count for that brand only,
+  // not keyword-noise.
+  const brandCount = await page.evaluate(() => {
+    const t = document.body.innerText || "";
+    const m = t.match(/~?([\d,]+)\s+results?/i);
+    return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+  });
+  log(`brand-ads count=${brandCount}`);
 
   // Scroll a few times to load enough cards for screenshotting.
   let lastHeight = 0;
@@ -377,7 +516,7 @@ async function captureAdsForPage(
     }
   }
   log(`brand-ads captured ${ads.length} screenshots`);
-  return { ads, videoCount: cardInfo.videos, imageCount: cardInfo.images };
+  return { ads, videoCount: cardInfo.videos, imageCount: cardInfo.images, brandCount };
 }
 
 async function scrapeMetaAdLibraryInner(
@@ -432,9 +571,21 @@ async function scrapeMetaAdLibraryInner(
     let foundCountry = primaryCountry;
     outer: for (const term of searchTerms) {
       for (const country of countryOrder) {
+        // Strategy 1: page-search URL (works when Meta honors search_type=page).
         const tile = await findBrandPageTile(page, term, country, log);
         if (tile) {
           foundTile = tile;
+          foundCountry = country;
+          break outer;
+        }
+        // Strategy 2: harvest page_ids from keyword-search cards. Meta serves
+        // a normal keyword-results page even when we ask for search_type=page,
+        // so we mine the rendered ad cards: each card's "Sponsored" link points
+        // at view_all_page_id=NNN. Count occurrences per advertiser, pick the
+        // one whose name best matches our search term.
+        const harvested = await harvestPageIdFromKeywordResults(page, term, country, log);
+        if (harvested) {
+          foundTile = harvested;
           foundCountry = country;
           break outer;
         }
@@ -451,8 +602,14 @@ async function scrapeMetaAdLibraryInner(
         prefix,
         log,
       );
-      const total = foundTile.activeAdCount || captured.imageCount + captured.videoCount;
-      log(`DONE strategy=page-search ads=${captured.ads.length} brandCount=${total}`);
+      // Trust order: count read off the brand's view_all_page_id page (truest)
+      // > activeAdCount surfaced on a page-search tile (only set by Strategy 1)
+      // > raw cards we tagged on the page (lower bound).
+      const total =
+        captured.brandCount ||
+        foundTile.activeAdCount ||
+        captured.imageCount + captured.videoCount;
+      log(`DONE ads=${captured.ads.length} brandCount=${total}`);
       return {
         success: captured.ads.length > 0,
         ads: captured.ads,
