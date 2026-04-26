@@ -510,7 +510,13 @@ async function scrapeMetaAdLibraryInner(
         await fs.writeFile(screenshotPath, buf);
 
         // Upload to Blob so the stored URL is portable across cold starts.
-        const jobIdLike = outputDir.replace(/\\/g, "/").split("/").slice(-1)[0];
+        // outputDir is `<jobDir>/ads`, so the second-to-last segment is the
+        // job id. Previously we used slice(-1) which returned the literal
+        // "ads", causing every job's screenshots to overwrite each other at
+        // the same blob URL — so an analysis for a brand with no ads ended
+        // up showing the previous job's ads.
+        const segs = outputDir.replace(/\\/g, "/").split("/").filter(Boolean);
+        const jobIdLike = segs[segs.length - 2] || segs[segs.length - 1] || "unknown";
         const blobKey = `jobs/${jobIdLike}/ads/${prefix}-ad-${ads.length + 1}.png`;
         const uploadedUrl = await putImage(blobKey, buf, "image/png");
 
