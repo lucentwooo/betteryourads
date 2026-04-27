@@ -407,6 +407,292 @@ async function harvestPageIdFromKeywordResults(
 }
 
 /**
+ * Run a keyword search, find ad cards whose linked Facebook page username
+ * matches our search term, and screenshot them in place.
+ *
+ * This replaces the old view_all_page_id-based approach. Meta redesigned
+ * the Ad Library so cards link to facebook.com/<PageUsername>/ instead of
+ * ?view_all_page_id=NNN, and search_type=page is silently ignored. So we
+ * mine usernames straight from the rendered keyword results.
+ */
+async function captureFromKeywordSearch(
+  page: import("puppeteer-core").Page,
+  searchTerm: string,
+  country: string,
+  outputDir: string,
+  prefix: string,
+  log: (msg: string) => void,
+): Promise<{
+  ads: AdScreenshot[];
+  matchedCards: number;
+  videoCount: number;
+  imageCount: number;
+  pageName?: string;
+}> {
+  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&q=${encodeURIComponent(
+    searchTerm,
+  )}&search_type=keyword_unordered`;
+  log(`username-search GOTO country=${country} q="${searchTerm}"`);
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  } catch (e) {
+    log(`username-search goto failed: ${e instanceof Error ? e.message : e}`);
+    return { ads: [], matchedCards: 0, videoCount: 0, imageCount: 0 };
+  }
+  await page
+    .waitForFunction(() => (document.body.innerText || "").includes("Library ID"), { timeout: 12000 })
+    .catch(() => {});
+  await delay(800);
+
+  let lastHeight = 0;
+  for (let i = 0; i < 8; i++) {
+    await page.evaluate(() => window.scrollBy(0, 1500));
+    await delay(700);
+    const newHeight = await page.evaluate(() => document.body.scrollHeight);
+    if (newHeight === lastHeight && i > 2) break;
+    lastHeight = newHeight;
+  }
+
+  // Find every card containing both "Library ID" and "Sponsored". For each,
+  // pull the first facebook.com/<username>/ link inside it (the advertiser
+  // page link). Tag matching cards by username similarity to search term.
+  const cardScan = await page.evaluate((rawTerm: string) => {
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/\.(ai|io|com|co|app|so|dev|net|org)\b/g, "")
+        .replace(/\b(inc|llc|ltd|corp|company|group)\b/g, "")
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const target = norm(rawTerm);
+    // Facebook system paths that aren't user/page slugs.
+    const SYSTEM_PATHS = new Set([
+      "ads",
+      "policies",
+      "privacy",
+      "help",
+      "pages",
+      "business",
+      "login",
+      "signup",
+      "about",
+      "careers",
+      "company",
+      "groups",
+      "watch",
+      "marketplace",
+      "events",
+      "gaming",
+      "messages",
+      "photos",
+      "videos",
+      "fbid.php",
+      "people",
+      "search",
+      "settings",
+      "notifications",
+      "fundraisers",
+      "saved",
+      "memories",
+      "feed",
+      "home.php",
+      "sharer.php",
+      "dialog",
+      "tr",
+      "l.php",
+    ]);
+    const extractUsername = (href: string): string | null => {
+      try {
+        const u = new URL(href);
+        if (u.hostname !== "www.facebook.com" && u.hostname !== "facebook.com") return null;
+        const parts = u.pathname.split("/").filter(Boolean);
+        if (parts.length === 0) return null;
+        const first = parts[0];
+        if (!first || first.length < 2) return null;
+        if (SYSTEM_PATHS.has(first.toLowerCase())) return null;
+        return first;
+      } catch {
+        return null;
+      }
+    };
+
+    // Walk every text node containing "Library ID" up to its visual card.
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) =>
+        n.textContent?.includes("Library ID") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    const nodes: Node[] = [];
+    let cur = walker.nextNode();
+    while (cur) {
+      nodes.push(cur);
+      cur = walker.nextNode();
+    }
+
+    const cards: { el: Element; username: string }[] = [];
+    const seen = new Set<Element>();
+    for (const node of nodes) {
+      let el: Element | null = node.parentElement;
+      while (el && el.parentElement) {
+        const r = el.getBoundingClientRect();
+        if (r.width >= 250 && r.width <= 700 && r.height >= 200) {
+          if (seen.has(el)) break;
+          // Avoid nesting overlap.
+          let nested = false;
+          for (const existing of seen) {
+            if (existing.contains(el) || el.contains(existing)) {
+              nested = true;
+              break;
+            }
+          }
+          if (nested) break;
+          // Pull first viable username link inside this card.
+          const links = Array.from(el.querySelectorAll("a[href]"));
+          let username: string | null = null;
+          for (const a of links) {
+            const u = extractUsername((a as HTMLAnchorElement).href || "");
+            if (u) {
+              username = u;
+              break;
+            }
+          }
+          if (username) {
+            seen.add(el);
+            cards.push({ el, username });
+          }
+          break;
+        }
+        el = el.parentElement;
+      }
+    }
+
+    // Score each card's username against the target. Track best-scoring
+    // username so we can label results with the brand's actual page name.
+    const usernameCounts: Record<string, number> = {};
+    for (const c of cards) usernameCounts[c.username] = (usernameCounts[c.username] || 0) + 1;
+    let bestUsername: string | null = null;
+    let bestScore = -1;
+    for (const [username, count] of Object.entries(usernameCounts)) {
+      const nu = norm(username);
+      let score = 0;
+      if (nu === target) score = 100;
+      else if (nu.startsWith(target) || target.startsWith(nu)) score = 50;
+      else if (
+        new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(nu) ||
+        new RegExp(`\\b${nu.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(target)
+      )
+        score = 20;
+      else continue;
+      score += Math.min(count, 20);
+      if (score > bestScore) {
+        bestScore = score;
+        bestUsername = username;
+      }
+    }
+
+    // Tag matching cards (those whose username == bestUsername) for screenshot.
+    let imageCount = 0;
+    let videoCount = 0;
+    let totalMatched = 0;
+    if (bestUsername) {
+      for (const c of cards) {
+        if (c.username !== bestUsername) continue;
+        const hasVideo = !!c.el.querySelector("video");
+        if (hasVideo) videoCount++;
+        else imageCount++;
+        c.el.setAttribute("data-betteryourads-card", String(totalMatched));
+        c.el.setAttribute("data-betteryourads-type", hasVideo ? "video" : "image");
+        totalMatched++;
+      }
+    }
+
+    const sample = Object.entries(usernameCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([u, c]) => `${u}x${c}`);
+
+    return {
+      cardsScanned: cards.length,
+      bestUsername,
+      bestScore,
+      totalMatched,
+      imageCount,
+      videoCount,
+      sample,
+    };
+  }, searchTerm);
+
+  log(
+    `username-search cards=${cardScan.cardsScanned} matched=${cardScan.totalMatched} best="${
+      cardScan.bestUsername ?? "none"
+    }" score=${cardScan.bestScore}`,
+  );
+  if (cardScan.cardsScanned > 0) {
+    log(`username-search sample: ${cardScan.sample.join(", ")}`);
+  }
+  if (cardScan.totalMatched === 0) {
+    return { ads: [], matchedCards: 0, videoCount: 0, imageCount: 0 };
+  }
+
+  const MAX_CARDS = 4;
+  const ads: AdScreenshot[] = [];
+  // Image first, then fill with video.
+  for (const want of ["image", "video"] as const) {
+    for (let i = 0; i < cardScan.totalMatched && ads.length < MAX_CARDS; i++) {
+      const info = await page.evaluate((idx: number) => {
+        const el = document.querySelector(`[data-betteryourads-card="${idx}"]`) as HTMLElement | null;
+        if (!el) return null;
+        return {
+          text: el.innerText?.trim().slice(0, 800) || "",
+          adType: el.getAttribute("data-betteryourads-type") || "image",
+        };
+      }, i);
+      if (!info || !info.text || info.adType !== want) continue;
+      try {
+        const handle = await page.evaluateHandle((idx: number) => {
+          return document.querySelector(`[data-betteryourads-card="${idx}"]`);
+        }, i);
+        const el = handle.asElement();
+        if (!el) {
+          await handle.dispose();
+          continue;
+        }
+        await (el as import("puppeteer-core").ElementHandle<Element>).scrollIntoView();
+        await delay(400);
+        const buf = Buffer.from(
+          await (el as import("puppeteer-core").ElementHandle<Element>).screenshot({ type: "png" }),
+        );
+        await fs.mkdir(outputDir, { recursive: true });
+        const screenshotPath = path.join(outputDir, `${prefix}-ad-${ads.length + 1}.png`);
+        await fs.writeFile(screenshotPath, buf);
+        const segs = outputDir.replace(/\\/g, "/").split("/").filter(Boolean);
+        const jobIdLike = segs[segs.length - 2] || segs[segs.length - 1] || "unknown";
+        const blobKey = `jobs/${jobIdLike}/ads/${prefix}-ad-${ads.length + 1}.png`;
+        const uploadedUrl = await putImage(blobKey, buf, "image/png");
+        ads.push({
+          screenshotPath: uploadedUrl,
+          copyText: info.text,
+          adType: info.adType as "image" | "video",
+          source: "meta-ad-library",
+        });
+        await handle.dispose();
+      } catch (e) {
+        log(`username-search screenshot ${i} failed: ${e instanceof Error ? e.message : e}`);
+      }
+      await delay(200);
+    }
+  }
+  log(`username-search captured ${ads.length} screenshots`);
+  return {
+    ads,
+    matchedCards: cardScan.totalMatched,
+    videoCount: cardScan.videoCount,
+    imageCount: cardScan.imageCount,
+    pageName: cardScan.bestUsername ?? undefined,
+  };
+}
+
+/**
  * Once we have a page_id, navigate to that brand's ad URL and screenshot
  * up to MAX_CARDS image ads. Returns ads + image/video counts observed.
  */
@@ -613,70 +899,51 @@ async function scrapeMetaAdLibraryInner(
     pushTerm(companyName);
     if (domainStem && normalize(domainStem) !== normalize(companyName)) pushTerm(domainStem);
 
-    let foundTile: PageTile | null = null;
-    let foundCountry = primaryCountry;
-    outer: for (const term of searchTerms) {
+    // Try every (term, country) combination via the keyword search +
+    // username-matching approach. Meta no longer puts view_all_page_id
+    // links in cards — they now link to facebook.com/<PageUsername>/.
+    // We walk those links, match the username to our search term, and
+    // screenshot matching cards in place.
+    for (const term of searchTerms) {
       for (const country of countryOrder) {
-        // Strategy 1: page-search URL (works when Meta honors search_type=page).
-        const tile = await findBrandPageTile(page, term, country, log);
-        if (tile) {
-          foundTile = tile;
-          foundCountry = country;
-          break outer;
-        }
-        // Strategy 2: harvest page_ids from keyword-search cards. Meta serves
-        // a normal keyword-results page even when we ask for search_type=page,
-        // so we mine the rendered ad cards: each card's "Sponsored" link points
-        // at view_all_page_id=NNN. Count occurrences per advertiser, pick the
-        // one whose name best matches our search term.
-        const harvested = await harvestPageIdFromKeywordResults(page, term, country, log);
-        if (harvested) {
-          foundTile = harvested;
-          foundCountry = country;
-          break outer;
+        const captured = await captureFromKeywordSearch(
+          page,
+          term,
+          country,
+          outputDir,
+          prefix,
+          log,
+        );
+        if (captured.matchedCards > 0) {
+          log(
+            `DONE strategy=keyword-username-match ads=${captured.ads.length} matched=${captured.matchedCards} pageName="${captured.pageName ?? "n/a"}"`,
+          );
+          return {
+            success: captured.ads.length > 0,
+            ads: captured.ads,
+            totalCount: captured.matchedCards,
+            videoCount: captured.videoCount,
+            imageCount: captured.imageCount,
+            reason:
+              captured.ads.length > 0
+                ? `Captured ${captured.ads.length} of ${captured.matchedCards} active ads we could see for ${captured.pageName ?? companyName}.`
+                : `Saw ${captured.matchedCards} matching cards but couldn't screenshot any image ads (likely all video).`,
+            trace,
+          };
         }
       }
     }
 
-    if (foundTile) {
-      log(`MATCH page="${foundTile.pageName}" id=${foundTile.pageId} country=${foundCountry} activeAds=${foundTile.activeAdCount}`);
-      const captured = await captureAdsForPage(
-        page,
-        foundTile.pageId,
-        foundCountry,
-        outputDir,
-        prefix,
-        log,
-      );
-      // Trust order: count read off the brand's view_all_page_id page (truest)
-      // > activeAdCount surfaced on a page-search tile (only set by Strategy 1)
-      // > raw cards we tagged on the page (lower bound).
-      const total =
-        captured.brandCount ||
-        foundTile.activeAdCount ||
-        captured.imageCount + captured.videoCount;
-      log(`DONE ads=${captured.ads.length} brandCount=${total}`);
-      return {
-        success: captured.ads.length > 0,
-        ads: captured.ads,
-        totalCount: total,
-        videoCount: captured.videoCount,
-        imageCount: captured.imageCount,
-        reason:
-          captured.ads.length > 0
-            ? `Found ${total} active ads on ${foundTile.pageName}'s page; captured ${captured.ads.length} samples.`
-            : foundTile.activeAdCount > 0
-              ? `${foundTile.pageName} runs ${foundTile.activeAdCount} active ads but we couldn't grab image samples (likely all video).`
-              : `${foundTile.pageName} is registered on Meta but has no active ads right now.`,
-        trace,
-      };
-    }
-
-    // Strategy 2: keyword fallback. Reach this when no Page tile matched —
-    // the brand may not have a verified Meta page or our matcher missed it.
-    log(`page-search exhausted, falling back to keyword search`);
-    const fallback = await keywordSearchFallback(page, companyName, domain, primaryCountry, outputDir, prefix, log);
-    return { ...fallback, trace };
+    log(`all strategies exhausted — no ads found for "${companyName}"`);
+    return {
+      success: false,
+      ads: [],
+      totalCount: 0,
+      videoCount: 0,
+      imageCount: 0,
+      reason: `No matching ads for "${companyName}" on Meta. They may not be running ads, or Meta isn't serving them to our region.`,
+      trace,
+    };
   } catch (error) {
     log(`FATAL ${error instanceof Error ? error.message : "Unknown error"}`);
     return {
