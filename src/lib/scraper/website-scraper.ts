@@ -22,12 +22,13 @@ export interface WebsiteScrapResult {
 // function budget. The pipeline treats screenshot failures as recoverable
 // and falls back to plain HTML extraction.
 const SCRAPE_TIMEOUT_MS = 75_000;
-// 3500px is enough for hero + 1-2 sections, which is what brand color
-// extraction needs. Going higher (we used to use 8000) OOMs Chromium on
-// Vercel serverless and crashes the page mid-screenshot with a
-// TargetCloseError. The text content (headings, body) is still pulled
-// from the full DOM, so we don't lose anything by clipping the visual.
-const MAX_SCREENSHOT_HEIGHT = 3500;
+// 1800px ≈ hero + first section. Even 3500 was crashing Chromium on
+// Vercel serverless mid-screenshot ("Page.captureScreenshot: Target
+// closed"), so we clip aggressively. Brand color extraction reads from
+// dominant pixels in the visible region; 1800px is more than enough.
+// Text content (headings, body, og tags) is still pulled from the full
+// DOM, so the diagnosis isn't degraded.
+const MAX_SCREENSHOT_HEIGHT = 1800;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -201,18 +202,33 @@ async function scrapeWebsiteInner(
     // protocol — that's what was killing the page session with
     // TargetCloseError on Vercel serverless. Brand colour extraction works
     // fine off JPEG.
+    // Try the full clipped screenshot first. If Chromium crashes (Target
+    // closed mid-encode is a recurring Vercel-serverless OOM symptom),
+    // fall back to a viewport-only capture which uses far less memory.
     let buffer: Buffer;
     try {
       buffer = Buffer.from(
         await page.screenshot({
           type: "jpeg",
-          quality: 80,
+          quality: 70,
           clip: { x: 0, y: 0, width: 1440, height: captureHeight },
         })
       );
     } catch (e) {
-      step(`screenshot call failed: ${e instanceof Error ? e.message : e}`);
-      throw e;
+      step(`clipped screenshot failed: ${e instanceof Error ? e.message : e}; trying viewport fallback`);
+      try {
+        buffer = Buffer.from(
+          await page.screenshot({
+            type: "jpeg",
+            quality: 65,
+            fullPage: false,
+          })
+        );
+        step(`viewport fallback screenshot OK`);
+      } catch (e2) {
+        step(`viewport fallback also failed: ${e2 instanceof Error ? e2.message : e2}`);
+        throw e2;
+      }
     }
     const localScreenshotPath = path.join(outputDir, "website-screenshot.jpg");
     await fs.mkdir(outputDir, { recursive: true });

@@ -425,7 +425,7 @@ async function findOfficialFacebookUsername(
   let response: { text: string; citations: string[] };
   try {
     response = await perplexitySearch({
-      prompt: `What is the URL of ${brandName}'s OFFICIAL Facebook page? Reply with ONLY the URL in the form https://www.facebook.com/<username> — nothing else. If you can't find an official Facebook page, reply with exactly: NONE`,
+      prompt: `Find the most popular Facebook page for the brand "${brandName}". Search the web for it. Reply with ONLY the URL in the form https://www.facebook.com/<username> — no extra explanation, no markdown, no quotes. If multiple pages exist, return the one with the most followers. Only reply NONE if you genuinely cannot find any Facebook page for this brand at all.`,
       maxTokens: 200,
       timeoutMs: 25_000,
     });
@@ -1000,6 +1000,7 @@ async function captureFromKeywordSearch(
   outputDir: string,
   prefix: string,
   log: (msg: string) => void,
+  options?: { exactUsername?: string },
 ): Promise<{
   ads: AdScreenshot[];
   matchedCards: number;
@@ -1045,7 +1046,8 @@ async function captureFromKeywordSearch(
   // Find every card containing both "Library ID" and "Sponsored". For each,
   // pull the first facebook.com/<username>/ link inside it (the advertiser
   // page link). Tag matching cards by username similarity to search term.
-  const cardScan = await page.evaluate((rawTerm: string) => {
+  const cardScan = await page.evaluate((args: { rawTerm: string; exactUsername?: string }) => {
+    const { rawTerm, exactUsername } = args;
     const norm = (s: string) =>
       s
         .toLowerCase()
@@ -1165,7 +1167,22 @@ async function captureFromKeywordSearch(
     const targetWords = target.split(/\s+/).filter((w) => w.length >= 2);
     let bestUsername: string | null = null;
     let bestScore = -1;
-    for (const [username, count] of Object.entries(usernameCounts)) {
+
+    // If caller provided an exactUsername (e.g. confirmed by Perplexity),
+    // bypass scoring entirely — just match cards whose username equals it
+    // (case-insensitive).
+    if (exactUsername) {
+      const targetExact = exactUsername.toLowerCase();
+      for (const username of Object.keys(usernameCounts)) {
+        if (username.toLowerCase() === targetExact) {
+          bestUsername = username;
+          bestScore = 999;
+          break;
+        }
+      }
+    }
+
+    if (!bestUsername) for (const [username, count] of Object.entries(usernameCounts)) {
       const nu = norm(username);
       const nuCompact = nu.replace(/\s+/g, "");
       let score = 0;
@@ -1227,7 +1244,7 @@ async function captureFromKeywordSearch(
       videoCount,
       sample,
     };
-  }, searchTerm);
+  }, { rawTerm: searchTerm, exactUsername: options?.exactUsername });
 
   log(
     `username-search cards=${cardScan.cardsScanned} matched=${cardScan.totalMatched} best="${
@@ -1519,9 +1536,11 @@ async function scrapeMetaAdLibraryInner(
     // new HiLux"), so they're invisible to keyword search. But there's
     // exactly one official Facebook page per brand, and a search engine
     // can find it deterministically.
+    let confirmedUsername: string | null = null;
     {
       const username = await findOfficialFacebookUsername(companyName, log);
       if (username) {
+        confirmedUsername = username;
         const pageId = await resolvePageIdFromUsername(page, username, companyName, log);
         if (pageId) {
           const captured = await captureAdsForPage(page, pageId, primaryCountry, outputDir, prefix, log);
@@ -1542,6 +1561,69 @@ async function scrapeMetaAdLibraryInner(
               trace,
             };
           }
+        }
+      }
+    }
+
+    // Strategy 0b: Perplexity gave us a confirmed username but FB blocked
+    // the profile page (login wall). Use the username directly as the
+    // exact match criterion against keyword search results — bypassing
+    // fuzzy brand-name matching entirely.
+    if (confirmedUsername) {
+      log(`falling through to keyword search with confirmed username="${confirmedUsername}"`);
+      for (const country of countryOrder) {
+        const captured = await captureFromKeywordSearch(
+          page,
+          confirmedUsername,
+          country,
+          outputDir,
+          prefix,
+          log,
+          { exactUsername: confirmedUsername },
+        );
+        if (captured.matchedCards > 0) {
+          log(
+            `DONE strategy=confirmed-username ads=${captured.ads.length} matched=${captured.matchedCards} username=${confirmedUsername}`,
+          );
+          return {
+            success: captured.ads.length > 0,
+            ads: captured.ads,
+            totalCount: captured.matchedCards,
+            videoCount: captured.videoCount,
+            imageCount: captured.imageCount,
+            reason:
+              captured.ads.length > 0
+                ? `Captured ${captured.ads.length} of ${captured.matchedCards} ads visible from ${confirmedUsername}'s page.`
+                : `Saw ${captured.matchedCards} matching cards but couldn't screenshot any image ads.`,
+            trace,
+          };
+        }
+        // Also try the brand name as keyword (some ads do mention it).
+        const captured2 = await captureFromKeywordSearch(
+          page,
+          companyName,
+          country,
+          outputDir,
+          prefix,
+          log,
+          { exactUsername: confirmedUsername },
+        );
+        if (captured2.matchedCards > 0) {
+          log(
+            `DONE strategy=confirmed-username-brand-keyword ads=${captured2.ads.length} matched=${captured2.matchedCards}`,
+          );
+          return {
+            success: captured2.ads.length > 0,
+            ads: captured2.ads,
+            totalCount: captured2.matchedCards,
+            videoCount: captured2.videoCount,
+            imageCount: captured2.imageCount,
+            reason:
+              captured2.ads.length > 0
+                ? `Captured ${captured2.ads.length} of ${captured2.matchedCards} ads visible from ${confirmedUsername}'s page.`
+                : `Saw ${captured2.matchedCards} matching cards but couldn't screenshot any image ads.`,
+            trace,
+          };
         }
       }
     }
