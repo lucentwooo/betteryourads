@@ -12,6 +12,7 @@ import { generateBrandDosAndDonts } from "../ai/diagnosis";
 import { runResearcher, runResearcherCheap } from "../agents/researcher";
 import { runStrategist } from "../agents/strategist";
 import { runCreativeDirector } from "../agents/creative-director";
+import { humanizeDiagnosis } from "../agents/humanizer";
 import type { BrandProfile, CompetitorData, DiagnosisResult, Job, VoiceOfCustomer } from "../types";
 
 // Hard cap for any single Meta Ad Library scrape. Chromium cold-launch
@@ -457,17 +458,19 @@ async function stageResearcher(jobId: string): Promise<void> {
   const job = await getJob(jobId);
   if (!job) return;
 
+  // Lean & Mean: always run the Perplexity-backed researcher. Anthropic's
+  // web_search-based runResearcher is ~5x more expensive and not worth it.
   const cheap = isCheapTest(job);
   await addProgress(
     jobId,
     "Researcher agent",
-    cheap
-      ? "Hunting customer quotes via Perplexity Sonar (cheap mode)"
-      : "Hunting real customer quotes across Reddit + reviews",
+    "Hunting customer quotes via Perplexity Sonar",
     { agent: "researcher" },
   );
 
-  const runner = cheap ? runResearcherCheap : runResearcher;
+  const runner = runResearcherCheap;
+  void runResearcher; // keep import live for the legacy path / future toggle
+  void cheap;
   const voc = await runner(job.input, async (msg) => {
     const outcome = msg.includes("pass")
       ? "pass"
@@ -622,6 +625,12 @@ async function stageStrategist(jobId: string): Promise<void> {
     { agent: "strategist" },
   );
   await addProgress(jobId, "Diagnosis complete", `QA score ${diagnosis.qa?.score ?? "n/a"}`, { agent: "strategist", qaOutcome: diagnosis.qa?.pass ? "pass" : "escalate" });
+
+  // Sonnet humanizer pass — polish the cheap-stack prose into a sharp
+  // human voice. Falls back to original output if Sonnet errors.
+  await addProgress(jobId, "Humanizer", "Polishing diagnosis prose with Sonnet 4.6", { agent: "humanizer" });
+  const polished = await humanizeDiagnosis(diagnosis);
+  await updateJob(jobId, { diagnosis: polished });
 
   await setStatus(jobId, "concept-architecting");
 }

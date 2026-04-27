@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { DiagnosisResult, BrandProfile, AdScreenshot, CompetitorData } from "../types";
 import {
   buildDiagnosisPrompt,
@@ -7,14 +6,7 @@ import {
   buildBrandDosAndDontsPrompt,
 } from "./prompts";
 import { chatText } from "./openrouter";
-
-const client = new Anthropic();
-
-// Model tiers — route each call to the cheapest model that can do the job.
-// Haiku 4.5 handles categorization / suggestion / short-format writing;
-// Sonnet 4 is reserved for real reasoning tasks (full diagnosis).
-const MODEL_CHEAP = "claude-haiku-4-5-20251001";
-const MODEL_SMART = "claude-sonnet-4-6";
+import { createTextMessage, MODEL_FAST, MODEL_REASON } from "../agents/shared";
 
 export async function runDiagnosis(params: {
   companyName: string;
@@ -39,12 +31,8 @@ export async function runDiagnosis(params: {
   if (params.cheap) {
     raw = await chatText(prompt, { maxTokens: 6000 });
   } else {
-    // Final diagnosis is the customer-facing executive summary —
-    // promote to Sonnet 4.6. The other diagnosis calls (categorize,
-    // suggestCompetitors, brand do/don'ts) are short structured
-    // extraction and stay on Haiku.
-    const message = await client.messages.create({
-      model: MODEL_SMART,
+    const message = await createTextMessage({
+      model: MODEL_REASON,
       max_tokens: 8000,
       messages: [{ role: "user", content: prompt }],
     });
@@ -110,8 +98,8 @@ export async function suggestCompetitors(
   if (opts.cheap) {
     categoryRaw = (await chatText(categoryPrompt, { maxTokens: 200 })).trim();
   } else {
-    const categoryMessage = await client.messages.create({
-      model: MODEL_CHEAP,
+    const categoryMessage = await createTextMessage({
+      model: MODEL_FAST,
       max_tokens: 200,
       messages: [{ role: "user", content: categoryPrompt }],
     });
@@ -151,8 +139,8 @@ export async function suggestCompetitors(
   if (opts.cheap) {
     text = await chatText(competitorsPrompt, { maxTokens: 500 });
   } else {
-    const message = await client.messages.create({
-      model: MODEL_CHEAP,
+    const message = await createTextMessage({
+      model: MODEL_FAST,
       max_tokens: 500,
       messages: [{ role: "user", content: competitorsPrompt }],
     });
@@ -184,8 +172,8 @@ export async function generateBrandDosAndDonts(
   if (opts.cheap) {
     text = await chatText(prompt, { maxTokens: 500 });
   } else {
-    const message = await client.messages.create({
-      model: MODEL_CHEAP,
+    const message = await createTextMessage({
+      model: MODEL_FAST,
       max_tokens: 500,
       messages: [{ role: "user", content: prompt }],
     });

@@ -1,5 +1,5 @@
 import type { DiagnosisResult, BrandProfile, AdScreenshot, CompetitorData, VoiceOfCustomer, VocPatternRef } from "../types";
-import { MODEL, runWithQA, judgeWithRubric, findBannedPhrases, createTextMessage, type ModelMode } from "./shared";
+import { MODEL_REASON, runWithQA, judgeWithRubric, findBannedPhrases, createTextMessage, type ModelMode } from "./shared";
 
 /**
  * Agent 2 — Strategist.
@@ -37,7 +37,7 @@ export async function runStrategist(
     generate: async (feedback) => {
       const userPrompt = buildDiagnosisUserPrompt(params, feedback);
       const msg = await createTextMessage({
-        model: MODEL,
+        model: MODEL_REASON,
         max_tokens: 8000,
         system: diagnosisSystemPrompt,
         messages: [{ role: "user", content: userPrompt }],

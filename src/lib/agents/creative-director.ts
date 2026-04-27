@@ -1,5 +1,5 @@
 import type { Concept, DiagnosisResult, VoiceOfCustomer, AwarenessStage } from "../types";
-import { MODEL, runWithQA, judgeWithRubric, extractJson, findBannedPhrases, createTextMessage, type ModelMode } from "./shared";
+import { MODEL_CREATIVE, runWithQA, judgeWithRubric, extractJson, findBannedPhrases, createTextMessage, type ModelMode } from "./shared";
 
 /**
  * Agent 3 — Creative Director (Concept Architect).
@@ -29,7 +29,7 @@ export async function runCreativeDirector(
     maxRetries: params.modelMode === "cheap" ? 1 : 2,
     generate: async (feedback) => {
       const msg = await createTextMessage({
-        model: MODEL,
+        model: MODEL_CREATIVE,
         max_tokens: 6000,
         system: conceptSystemPrompt,
         messages: [

@@ -1,5 +1,5 @@
 import type { Concept, CreativeCopy, VoiceOfCustomer, BrandProfile } from "../types";
-import { client, MODEL, runWithQA, judgeWithRubric, extractJson, findBannedPhrases } from "./shared";
+import { MODEL_CREATIVE, runWithQA, judgeWithRubric, extractJson, findBannedPhrases, createTextMessage } from "./shared";
 
 /**
  * Agent 4 — Copywriter.
@@ -28,8 +28,8 @@ export async function runCopywriter(
     generatorName: "Copywriter",
     qaName: "CopyQA",
     generate: async (feedback) => {
-      const msg = await client.messages.create({
-        model: MODEL,
+      const msg = await createTextMessage({
+        model: MODEL_CREATIVE,
         max_tokens: 2000,
         system: copySystemPrompt,
         messages: [{ role: "user", content: buildCopyPrompt(params, feedback) }],

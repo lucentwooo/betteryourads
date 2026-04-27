@@ -3,6 +3,7 @@ import { getJob, updateJob, addProgress, setStatus, getJobDir } from "./manager"
 import { runCopywriter } from "../agents/copywriter";
 import { runArtDirector } from "../agents/art-director";
 import { runImageGenerator } from "../agents/image-generator";
+import { humanizeCopy } from "../agents/humanizer";
 import type { Creative, Concept } from "../types";
 
 /**
@@ -93,7 +94,11 @@ async function produceOneCreative(params: {
     },
     progress,
   );
-  creative.copy = copy;
+
+  // Sonnet humanizer pass — polish into a sharp human voice. Falls back
+  // to the cheap-stack copy if Sonnet errors or breaks char limits.
+  await progress(`Humanizer polishing copy for "${concept.name}"`);
+  creative.copy = await humanizeCopy(copy, concept.name);
 
   // Art Director
   await setStatus(jobId, "prompt-writing");

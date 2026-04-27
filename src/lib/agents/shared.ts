@@ -5,14 +5,42 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages";
 import type { QAResult } from "../types";
 
-// Sonnet 4.6 for customer-facing creative + decision agents (strategist,
-// creative-director, copywriter, art-director, diagnosis synthesis).
-export const MODEL = "claude-sonnet-4-6";
-// Haiku 4.5 for orchestration, evaluation, and structured-output extraction
-// (researcher, image-generator orchestrator, QA rubric judging).
-export const MODEL_CHEAP = "claude-haiku-4-5-20251001";
+// Lean & Mean tier: cheap models on the default path, Sonnet only on the
+// final humanizer pass. Routing is by model-name prefix (see
+// createTextMessage): claude-* → Anthropic SDK; everything else →
+// OpenRouter using the same slug.
+//
+// MODEL_CREATIVE: ad copy + concepts. Kimi K2 has the best human voice
+// among cheap models.
+export const MODEL_CREATIVE =
+  process.env.MODEL_CREATIVE || "moonshotai/kimi-k2-0905";
+// MODEL_REASON: diagnosis synthesis + structured visual briefs. DeepSeek
+// V3.x is the best $/intelligence ratio for reasoning-heavy work.
+export const MODEL_REASON =
+  process.env.MODEL_REASON || "deepseek/deepseek-chat-v3.1";
+// MODEL_FAST: orchestration, structured extraction, QA rubrics. Gemini
+// Flash is dirt cheap and reliable on JSON.
+export const MODEL_FAST =
+  process.env.MODEL_FAST || "google/gemini-2.5-flash";
+// MODEL_HUMANIZE: Sonnet 4.6, called once at the end to polish ad copy +
+// diagnosis prose into a sharp human voice.
+export const MODEL_HUMANIZE =
+  process.env.MODEL_HUMANIZE || "claude-sonnet-4-6";
+// Vision QA on generated images stays on Claude Haiku — Anthropic's
+// image content shape is what image-generator.ts already passes.
+export const MODEL_VISION_QA = "claude-haiku-4-5-20251001";
+
+// Back-compat aliases. Old code paths import MODEL/MODEL_CHEAP — these
+// now point at the cheap tier so any forgotten import still gets cheap.
+export const MODEL = MODEL_CREATIVE;
+export const MODEL_CHEAP = MODEL_FAST;
+
+// Legacy single-model OpenRouter slug used by the cheap-mode flag. Kept
+// for backwards compat with the ?cheap=1 toggle which routes everything
+// through this one model.
 export const OPENROUTER_MODEL =
   process.env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3.1";
+
 export const client = new Anthropic();
 export type ModelMode = "full" | "cheap";
 
@@ -124,18 +152,32 @@ export async function createTextMessage(
   options?: { timeout?: number },
   mode: ModelMode = "full",
 ): Promise<TextMessage> {
-  if (mode !== "cheap") {
+  // Router: Anthropic SDK for claude-* models, OpenRouter for everything
+  // else (Kimi, DeepSeek, Gemini, etc.). The legacy `mode === "cheap"`
+  // flag still routes through OpenRouter with OPENROUTER_MODEL, ignoring
+  // params.model. Anything else uses params.model verbatim as the
+  // OpenRouter slug.
+  const modelStr = String(params.model);
+  const isClaude = modelStr.startsWith("claude-");
+
+  if (mode !== "cheap" && isClaude) {
     return client.messages.create(params, options) as unknown as Promise<TextMessage>;
   }
 
   if (!process.env.OPENROUTER_API_KEY) {
-    throw new Error("OPENROUTER_API_KEY is missing. Add it in Vercel to use cheap test mode.");
+    throw new Error(
+      "OPENROUTER_API_KEY is missing. Add it in Vercel to use non-Anthropic models.",
+    );
   }
 
+  // In cheap mode the user explicitly asked for the legacy single-model
+  // path. Otherwise use whatever model the caller specified.
+  const openrouterSlug = mode === "cheap" ? OPENROUTER_MODEL : modelStr;
+
   const controller = new AbortController();
-  // DeepSeek via OpenRouter is much slower than Claude on long prompts.
-  // Use 220s default in cheap mode so callers don't have to remember.
-  const defaultTimeoutMs = mode === "cheap" ? 220_000 : 90_000;
+  // OpenRouter is generally slower than Claude on long prompts. Use 220s
+  // default so callers don't have to remember.
+  const defaultTimeoutMs = 220_000;
   const timeout = setTimeout(() => controller.abort(), options?.timeout ?? defaultTimeoutMs);
   try {
     const system = flattenSystem(params.system);
@@ -147,6 +189,18 @@ export async function createTextMessage(
       })),
     ];
 
+    // DeepSeek V3.1 specifically suffers from one upstream provider
+    // (DeepInfra) truncating completions at ~150 tokens. Pin provider
+    // order only for that model so unrelated models aren't constrained.
+    const isDeepSeek = openrouterSlug.startsWith("deepseek/");
+    const providerConfig = isDeepSeek
+      ? {
+          order: ["Novita", "SambaNova", "Fireworks", "Together"],
+          ignore: ["DeepInfra"],
+          allow_fallbacks: true,
+        }
+      : undefined;
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -156,20 +210,11 @@ export async function createTextMessage(
         "X-Title": "Better Your Ads",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: openrouterSlug,
         messages,
         max_tokens: params.max_tokens,
         temperature: params.temperature,
-        // OpenRouter load-balances across multiple providers per model. For
-        // DeepSeek v3.1 specifically, DeepInfra's instance truncates to
-        // ~150 completion tokens with finish_reason=stop while Novita and
-        // SambaNova produce full-length output. Pin order + ignore the bad
-        // ones so we get reliable diagnoses.
-        provider: {
-          order: ["Novita", "SambaNova", "Fireworks", "Together"],
-          ignore: ["DeepInfra"],
-          allow_fallbacks: true,
-        },
+        ...(providerConfig ? { provider: providerConfig } : {}),
       }),
       signal: controller.signal,
     });

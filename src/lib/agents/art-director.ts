@@ -1,5 +1,5 @@
 import type { Concept, CreativeCopy, DenseNarrativePrompt, BrandProfile, VisualRegister, Track } from "../types";
-import { client, MODEL, runWithQA, judgeWithRubric, extractJson } from "./shared";
+import { MODEL_REASON, runWithQA, judgeWithRubric, extractJson, createTextMessage } from "./shared";
 import { selectReferences, type ReferenceAd } from "../references/loader";
 
 /**
@@ -51,8 +51,8 @@ export async function runArtDirector(
     generatorName: "ArtDirector",
     qaName: "PromptQA",
     generate: async (feedback) => {
-      const msg = await client.messages.create({
-        model: MODEL,
+      const msg = await createTextMessage({
+        model: MODEL_REASON,
         max_tokens: 6000,
         system: promptSystemPrompt,
         messages: [
@@ -104,8 +104,8 @@ export async function runArtDirector(
 async function pickRegisterAndTrack(
   params: Parameters<typeof runArtDirector>[0],
 ): Promise<{ register: VisualRegister; track: Track; justification: string }> {
-  const msg = await client.messages.create({
-    model: MODEL,
+  const msg = await createTextMessage({
+    model: MODEL_REASON,
     max_tokens: 400,
     system: `You decide visual register + Track (A = full-bake text-in-image, B = image-only + Sharp composite for text).
 Pick one register from: editorial, product-first, lifestyle, documentary, meme, testimonial, comparison.
