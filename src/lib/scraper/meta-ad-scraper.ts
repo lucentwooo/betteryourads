@@ -2006,11 +2006,11 @@ async function scrapeMetaAdLibraryInner(
             trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
           }
           // Pages-tab fallback when view_all_page_id renders empty.
-          if (trueCount === 0 && captured.pageName) {
+          if (trueCount === 0 && captured2.pageName) {
             trueCount = await readBrandCountFromPagesTab(
               page,
-              captured.pageName,
-              captured.pageName,
+              captured2.pageName,
+              captured2.pageName,
               resolvedPageId,
               country,
               log,
