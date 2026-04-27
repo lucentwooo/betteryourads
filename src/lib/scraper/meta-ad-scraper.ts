@@ -22,6 +22,7 @@ export async function scrapeMetaAdLibrary(
   outputDir: string,
   prefix: string = "company",
   companyUrl?: string,
+  options?: { countryOverride?: string },
 ): Promise<MetaAdResult> {
   const trace: string[] = [];
   const log = (msg: string) => {
@@ -45,7 +46,7 @@ export async function scrapeMetaAdLibrary(
 
   return Promise.race([
     timeoutPromise,
-    scrapeMetaAdLibraryInner(companyName, outputDir, prefix, companyUrl, log, trace),
+    scrapeMetaAdLibraryInner(companyName, outputDir, prefix, companyUrl, options?.countryOverride, log, trace),
   ]);
 }
 
@@ -691,10 +692,21 @@ async function captureFromKeywordSearch(
     searchTerm,
   )}&search_type=keyword_unordered`;
   log(`username-search GOTO country=${country} q="${searchTerm}"`);
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
-  } catch (e) {
-    log(`username-search goto failed: ${e instanceof Error ? e.message : e}`);
+  // Meta's regional Ad Library endpoints (especially country=AU) sporadically
+  // take 15-25s to respond. Bump timeout and retry once before giving up.
+  let gotoSucceeded = false;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
+      gotoSucceeded = true;
+      break;
+    } catch (e) {
+      log(`username-search goto attempt ${attempt} failed: ${e instanceof Error ? e.message : e}`);
+      if (attempt === 2) break;
+      await delay(1500);
+    }
+  }
+  if (!gotoSucceeded) {
     return { ads: [], matchedCards: 0, videoCount: 0, imageCount: 0 };
   }
   await page
@@ -1132,6 +1144,7 @@ async function scrapeMetaAdLibraryInner(
   outputDir: string,
   prefix: string,
   companyUrl: string | undefined,
+  countryOverride: string | undefined,
   log: (msg: string) => void,
   trace: string[],
 ): Promise<MetaAdResult> {
@@ -1151,7 +1164,10 @@ async function scrapeMetaAdLibraryInner(
 
     const domain = extractDomain(companyUrl);
     const domainStem = domain ? domain.split(".")[0] : undefined;
-    const primaryCountry = countryFromDomain(domain);
+    // countryOverride takes precedence — used by competitor scrapes that
+    // want to inherit the analyzed brand's country context without
+    // accidentally inheriting the brand's domain stem as a search term.
+    const primaryCountry = countryOverride || countryFromDomain(domain);
 
     // Strategy 1: page-search first. Try the most specific country, then broaden.
     // Country order: derived-from-domain > US > ALL. Skip duplicates.

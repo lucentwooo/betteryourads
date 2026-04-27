@@ -22,6 +22,30 @@ const META_SCRAPE_TIMEOUT_MS = 145_000;
 const WEBSITE_SCREENSHOT_TIMEOUT_MS = 80_000;
 const STRATEGIST_TIMEOUT_MS = 240_000;
 
+// Mirrors countryFromDomain in meta-ad-scraper.ts. Kept here so we can
+// derive country context for competitor scrapes without re-exporting
+// internals from the scraper module.
+function countryFromCompanyUrl(raw?: string): string {
+  if (!raw) return "ALL";
+  let host = "";
+  try {
+    const u = raw.startsWith("http") ? new URL(raw) : new URL(`https://${raw}`);
+    host = u.hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "ALL";
+  }
+  const tldMap: Record<string, string> = {
+    "com.au": "AU", "co.uk": "GB", "co.nz": "NZ", "co.za": "ZA",
+    "co.in": "IN", "com.br": "BR", "com.mx": "MX", "com.sg": "SG",
+    ca: "CA", de: "DE", fr: "FR", es: "ES", it: "IT", jp: "JP",
+    kr: "KR", nl: "NL", se: "SE", no: "NO", dk: "DK", ie: "IE",
+  };
+  for (const [tld, code] of Object.entries(tldMap)) {
+    if (host.endsWith("." + tld)) return code;
+  }
+  return "ALL";
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(
@@ -141,12 +165,14 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   // of failure. If Chromium cold-starts slowly or a site fights headless
   // browsers, we fall back to fast HTML extraction and keep the pipeline
   // moving instead of leaving users stuck on "Scanning site".
+  let screenshotError: string | null = null;
   const [screenshotRes, pageRes] = await Promise.all([
     withTimeout(
       scrapeWebsite(job.input.companyUrl, jobDir),
       WEBSITE_SCREENSHOT_TIMEOUT_MS,
       `scrapeWebsite(${job.input.companyUrl})`
     ).catch((err) => {
+      screenshotError = err instanceof Error ? err.message : String(err);
       console.error("[pipeline] scrapeWebsite failed:", err);
       return null;
     }),
@@ -155,6 +181,11 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
       return null;
     }),
   ]);
+  if (screenshotError) {
+    // Vercel runtime logs drop output under load, so push the actual
+    // failure reason into the progress log where we can always read it.
+    await addProgress(jobId, "Website screenshot error", screenshotError);
+  }
 
   const websiteContent =
     screenshotRes?.textContent ||
@@ -333,15 +364,19 @@ async function stageOneCompetitor(jobId: string): Promise<boolean> {
 
   await addProgress(jobId, "Researching competitor", `Searching ads for ${competitorName}...`);
 
+  // Competitors inherit the analyzed brand's COUNTRY context only — never
+  // the brand's URL. Passing the URL caused the scraper to fall back to
+  // searching for the brand's domain stem ("omodajaecoo") when the
+  // competitor name returned no matches, surfacing OUR brand's foreign
+  // ads as the competitor's ads.
+  const brandCountry = countryFromCompanyUrl(job.input.companyUrl);
   const competitorResult = await withTimeout(
     scrapeMetaAdLibrary(
       competitorName,
       adsDir,
       competitorName.toLowerCase().replace(/\s+/g, "-"),
-      // Pass the analyzed brand's URL so competitor searches inherit the
-      // country context. Without this an Australian brand's competitors
-      // get searched in country=ALL/US and we miss their regional ads.
-      job.input.companyUrl,
+      undefined,
+      { countryOverride: brandCountry },
     ),
     META_SCRAPE_TIMEOUT_MS,
     `scrapeMetaAdLibrary(${competitorName})`
