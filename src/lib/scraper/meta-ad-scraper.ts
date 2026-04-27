@@ -1479,32 +1479,66 @@ async function readBrandCountFromPagesTab(
         }
         if (score > bestScore) { bestScore = score; best = t; }
       }
+      // Brute force: grab every "X active ads" / "X.XK ads" match in
+      // entire body, regardless of whether we matched a tile container.
+      // If real tiles rendered but our DOM walking missed them, we can
+      // still pick up the count from raw text.
+      const fullText = document.body.innerText || "";
+      const allCounts: { num: number; ctx: string }[] = [];
+      const re = /([\d,]+\.?\d*)\s*([KkMm]?)\s+(?:active\s+)?ads?\b/gi;
+      let mm: RegExpExecArray | null;
+      while ((mm = re.exec(fullText)) !== null) {
+        const n = parseFloat(mm[1].replace(/,/g, ""));
+        const suf = (mm[2] || "").toLowerCase();
+        const num = suf === "k" ? Math.round(n * 1000) : suf === "m" ? Math.round(n * 1_000_000) : Math.round(n);
+        if (num >= 1) {
+          const start = Math.max(0, mm.index - 60);
+          const ctx = fullText.slice(start, mm.index + mm[0].length + 30).replace(/\s+/g, " ").trim();
+          allCounts.push({ num, ctx: ctx.slice(0, 160) });
+        }
+      }
+
       return {
         tilesFound: tiles.length,
         best,
         bestScore,
-        bodyPreview: (document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200),
+        bodyPreview: fullText.replace(/\s+/g, " ").trim().slice(0, 400),
         tilesPreview: tiles.slice(0, 3).map((t) => ({
           username: t.username,
           pageId: t.pageId,
           count: t.count,
           textPreview: t.text.replace(/\s+/g, " ").trim().slice(0, 200),
         })),
+        allCounts: allCounts.slice(0, 8),
       };
     }, { wantUsername: matchUsername, wantPageId: matchPageId, rawTerm: searchTerm });
 
     log(`pages-tab country=${c} tiles=${probe.tilesFound} bestScore=${probe.bestScore} bestCount=${probe.best?.count ?? 0} bestUsername=${probe.best?.username ?? "n/a"}`);
-    if (probe.tilesFound === 0) {
-      log(`pages-tab country=${c} body="${probe.bodyPreview}"`);
-    } else if (probe.bestScore < 0 || (probe.best && probe.best.count === 0)) {
-      // Tiles rendered but we couldn't match or extract count — dump
-      // the first 3 so the next iteration can see what's actually there.
+    if (probe.allCounts.length > 0) {
+      log(`pages-tab counts-seen: ${probe.allCounts.map((c) => `${c.num}@"${c.ctx}"`).join(" || ")}`);
+    } else {
+      log(`pages-tab no counts in body. preview="${probe.bodyPreview}"`);
+    }
+    if (probe.tilesFound > 0 && (probe.bestScore < 0 || (probe.best && probe.best.count === 0))) {
       for (const t of probe.tilesPreview) {
         log(`pages-tab tile username=${t.username ?? "n/a"} pageId=${t.pageId ?? "n/a"} count=${t.count} text="${t.textPreview}"`);
       }
     }
     if (probe.best && probe.best.count > 0) {
       return probe.best.count;
+    }
+    // Brute-force fallback: pick the largest plausible count from body
+    // text whose context mentions the brand or matches an obvious tile
+    // header. Cap at the largest reasonable advertiser count to avoid
+    // catching post engagement numbers etc.
+    const brandLower = (matchUsername || searchTerm || "").toLowerCase();
+    for (const c2 of probe.allCounts) {
+      if (c2.num > 1_000_000) continue;
+      if (!brandLower) {
+        if (c2.num > 0) return c2.num;
+      } else if (c2.ctx.toLowerCase().includes(brandLower) || c2.ctx.toLowerCase().includes((searchTerm || "").toLowerCase())) {
+        return c2.num;
+      }
     }
   }
   return 0;
@@ -1972,9 +2006,11 @@ async function scrapeMetaAdLibraryInner(
           }
           // Pages-tab fallback when view_all_page_id renders empty.
           if (trueCount === 0 && captured.pageName) {
+            // Search by brand name (e.g. "Headway"), not username
+            // ("headwaybooks") — the Pages tab indexes display names.
             trueCount = await readBrandCountFromPagesTab(
               page,
-              captured.pageName,
+              companyName,
               captured.pageName,
               resolvedPageId,
               country,
@@ -2021,7 +2057,7 @@ async function scrapeMetaAdLibraryInner(
           if (trueCount === 0 && captured2.pageName) {
             trueCount = await readBrandCountFromPagesTab(
               page,
-              captured2.pageName,
+              companyName,
               captured2.pageName,
               resolvedPageId,
               country,
@@ -2119,9 +2155,11 @@ async function scrapeMetaAdLibraryInner(
             trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
           }
           if (trueCount === 0 && captured.pageName) {
+            // Search by brand name (e.g. "Headway"), not username
+            // ("headwaybooks") — the Pages tab indexes display names.
             trueCount = await readBrandCountFromPagesTab(
               page,
-              captured.pageName,
+              companyName,
               captured.pageName,
               resolvedPageId,
               country,
