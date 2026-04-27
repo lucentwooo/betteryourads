@@ -18,16 +18,39 @@ const STAGE_LABELS: { status: JobStatus; label: string; agent: string }[] = [
 ];
 
 export function ProgressTracker({
+  jobId,
   status,
   progress,
   error,
+  now,
 }: {
+  jobId: string;
   status: JobStatus;
   progress: ProgressStep[];
   error?: string;
+  now: number;
 }) {
   const currentIndex = STAGE_LABELS.findIndex((s) => s.status === status);
   const tail = progress.slice(-14).reverse();
+  const lastSignal = progress.at(-1);
+  const lastSignalAt = lastSignal ? new Date(lastSignal.timestamp).getTime() : null;
+  const quietForSeconds = lastSignalAt
+    ? Math.max(0, Math.floor((now - lastSignalAt) / 1000))
+    : null;
+  const isStale =
+    status !== "error" &&
+    quietForSeconds !== null &&
+    quietForSeconds > 150;
+  const isQuiet =
+    status !== "error" &&
+    quietForSeconds !== null &&
+    quietForSeconds > 45 &&
+    !isStale;
+  const statusLabel = isStale
+    ? "No backend signal recently"
+    : isQuiet
+    ? "Long-running stage"
+    : "Receiving updates";
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-16">
@@ -39,6 +62,44 @@ export function ProgressTracker({
       <p className="mt-4 max-w-xl text-lg text-ink/70">
         Each stage runs a generator agent, then a strict QA reviewer. Bad output never passes through.
       </p>
+
+      <section
+        className={`mt-6 rounded-2xl border-[1.5px] px-4 py-3 text-sm ${
+          isStale
+            ? "border-coral bg-coral/10"
+            : isQuiet
+            ? "border-butter bg-butter/20"
+            : "border-ink/15 bg-card"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink/45">
+              Job health
+            </div>
+            <div className="mt-1 font-semibold text-ink">{statusLabel}</div>
+          </div>
+          <div className="font-mono text-[0.72rem] uppercase tracking-[0.14em] text-ink/55">
+            {quietForSeconds === null
+              ? "Waiting for first signal"
+              : `Last signal ${formatAge(quietForSeconds)} ago`}
+          </div>
+        </div>
+        <div className="mt-2 grid gap-1 font-mono text-[0.72rem] text-ink/55 sm:grid-cols-2">
+          <span>Job: {jobId}</span>
+          <span>Stage: {status}</span>
+        </div>
+        {isStale && (
+          <p className="mt-3 text-ink/70">
+            This is probably stuck. Refresh once; if it still shows this warning,
+            start a new run or check the job JSON at{" "}
+            <a className="underline" href={`/api/jobs/${jobId}`} target="_blank">
+              /api/jobs/{jobId}
+            </a>
+            .
+          </p>
+        )}
+      </section>
 
       {error && (
         <div className="mt-6 rounded-xl border-[1.5px] border-coral bg-coral/10 px-4 py-3 text-sm text-ink">
@@ -112,4 +173,14 @@ export function ProgressTracker({
       </section>
     </main>
   );
+}
+
+function formatAge(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins ? `${hours}h ${mins}m` : `${hours}h`;
 }

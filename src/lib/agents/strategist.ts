@@ -1,5 +1,5 @@
 import type { DiagnosisResult, BrandProfile, AdScreenshot, CompetitorData, VoiceOfCustomer, VocPatternRef } from "../types";
-import { client, MODEL, runWithQA, judgeWithRubric, findBannedPhrases } from "./shared";
+import { MODEL, runWithQA, judgeWithRubric, findBannedPhrases, createTextMessage, type ModelMode } from "./shared";
 
 /**
  * Agent 2 — Strategist.
@@ -24,6 +24,7 @@ export async function runStrategist(
     notes?: string;
     adContentDescription?: string;
     voc?: VoiceOfCustomer;
+    modelMode?: ModelMode;
   },
   onAgentProgress?: (msg: string) => Promise<void> | void,
 ): Promise<DiagnosisResult> {
@@ -32,18 +33,19 @@ export async function runStrategist(
   const { output, qa, escalated } = await runWithQA<DiagnosisResult>({
     generatorName: "Strategist",
     qaName: "DiagnosisQA",
+    maxRetries: params.modelMode === "cheap" ? 1 : 2,
     generate: async (feedback) => {
       const userPrompt = buildDiagnosisUserPrompt(params, feedback);
-      const msg = await client.messages.create({
+      const msg = await createTextMessage({
         model: MODEL,
         max_tokens: 8000,
         system: diagnosisSystemPrompt,
         messages: [{ role: "user", content: userPrompt }],
-      });
+      }, { timeout: params.modelMode === "cheap" ? 220_000 : 90_000 }, params.modelMode);
       const raw = msg.content[0].type === "text" ? msg.content[0].text : "";
       return parseDiagnosis(raw, params.voc);
     },
-    qa: async (d) => diagnosisQA(d, params.voc),
+    qa: async (d) => diagnosisQA(d, params.voc, params.modelMode),
     onAttempt: async (attempt, outcome, qa) => {
       await onAgentProgress?.(
         `Diagnosis QA ${outcome} (attempt ${attempt + 1}, score ${qa.score})`,
@@ -132,7 +134,7 @@ function parseDiagnosis(raw: string, voc?: VoiceOfCustomer): DiagnosisResult {
 
 /* ───────── QA ───────── */
 
-async function diagnosisQA(d: DiagnosisResult, voc?: VoiceOfCustomer) {
+async function diagnosisQA(d: DiagnosisResult, voc?: VoiceOfCustomer, modelMode?: ModelMode) {
   const hardFails: string[] = [];
 
   // All 8 areas present
@@ -201,6 +203,7 @@ Example VoC cited: ${d.vocReferences?.slice(0, 2).map((r) => `${r.patternName} �
       "vocIntegration",
     ],
     passThreshold: 7,
+    modelMode,
   });
 }
 

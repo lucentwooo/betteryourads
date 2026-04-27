@@ -1,4 +1,4 @@
-import type { Job } from "./types";
+import type { Job, JobStatus, ProgressStep } from "./types";
 
 export const MOCK_JOB: Job = {
   id: "mock-001",
@@ -226,3 +226,98 @@ Why it matters: When a Solution Aware viewer sees both Tally and Typeform ads, t
   createdAt: new Date().toISOString(),
   completedAt: new Date().toISOString(),
 };
+
+const MOCK_PROGRESS_STEPS: Array<{
+  at: number;
+  status: JobStatus;
+  step: string;
+  detail: string;
+  agent?: string;
+}> = [
+  {
+    at: 0,
+    status: "scraping-website",
+    step: "Scanning website",
+    detail: "Capturing screenshot and reading https://tally.so...",
+  },
+  {
+    at: 8,
+    status: "extracting-brand",
+    step: "Website scanned",
+    detail: "Captured screenshot and extracted 4521 characters",
+  },
+  {
+    at: 14,
+    status: "scraping-ads",
+    step: "Brand extracted",
+    detail: "Found primary color #6c47ff, font Inter",
+  },
+  {
+    at: 20,
+    status: "scraping-competitor-ads",
+    step: "Ads found",
+    detail: "Found 3 active ads",
+  },
+  {
+    at: 28,
+    status: "voc-research",
+    step: "Competitors scanned",
+    detail: "Typeform, Jotform, and Google Forms benchmarked",
+  },
+  {
+    at: 38,
+    status: "analyzing",
+    step: "Researcher",
+    detail: "VoC QA pass (attempt 1, score 8.2)",
+    agent: "researcher",
+  },
+  {
+    at: 50,
+    status: "concept-architecting",
+    step: "Strategist",
+    detail: "Diagnosis QA pass (attempt 1, score 8.4)",
+    agent: "strategist",
+  },
+  {
+    at: 62,
+    status: "complete",
+    step: "Concepts ready",
+    detail: "4 concepts across 3 awareness stages",
+    agent: "creative-director",
+  },
+];
+
+export function isMockProgressJob(id: string): boolean {
+  return /^mock-progress-\d+$/.test(id);
+}
+
+export function makeMockProgressJob(id: string, now = Date.now()): Job {
+  const startedAt = Number(id.replace("mock-progress-", ""));
+  const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const visible = MOCK_PROGRESS_STEPS.filter((p) => p.at <= elapsedSeconds);
+  const latest = visible.at(-1) || MOCK_PROGRESS_STEPS[0];
+  const progress: ProgressStep[] = visible.map((p) => ({
+    step: p.step,
+    detail: p.detail,
+    agent: p.agent,
+    timestamp: new Date(startedAt + p.at * 1000).toISOString(),
+  }));
+
+  if (latest.status === "complete") {
+    return {
+      ...MOCK_JOB,
+      id,
+      progress,
+      createdAt: new Date(startedAt).toISOString(),
+      completedAt: new Date(startedAt + latest.at * 1000).toISOString(),
+    };
+  }
+
+  return {
+    id,
+    status: latest.status,
+    input: MOCK_JOB.input,
+    progress,
+    createdAt: new Date(startedAt).toISOString(),
+  };
+}

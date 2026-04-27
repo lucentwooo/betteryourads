@@ -1,7 +1,23 @@
 import { NextResponse } from "next/server";
 import { getJob, updateJob } from "@/lib/jobs/manager";
-import { MOCK_JOB } from "@/lib/mock-data";
+import { isMockProgressJob, makeMockProgressJob, MOCK_JOB } from "@/lib/mock-data";
 import type { Concept } from "@/lib/types";
+
+// Polled every 2s by the /analyze progress page. MUST NOT cache — a cached
+// response freezes the UI on whatever status was cached at first poll.
+// Next 16's default caching was the reason "Scanning site" appeared stuck.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function noStore(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, {
+    ...init,
+    headers: {
+      "cache-control": "no-store, no-cache, must-revalidate",
+      ...(init?.headers || {}),
+    },
+  });
+}
 
 export async function GET(
   _request: Request,
@@ -10,18 +26,21 @@ export async function GET(
   const { jobId } = await params;
 
   if (jobId === "mock-001") {
-    return NextResponse.json(MOCK_JOB);
+    return noStore(MOCK_JOB);
+  }
+  if (isMockProgressJob(jobId)) {
+    return noStore(makeMockProgressJob(jobId));
   }
 
   const job = await getJob(jobId);
 
   if (!job) {
-    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    return noStore({ error: "Job not found" }, { status: 404 });
   }
 
   const revealFull = job.status === "complete" || job.status === "awaiting-approval";
 
-  return NextResponse.json({
+  return noStore({
     id: job.id,
     status: job.status,
     progress: job.progress,

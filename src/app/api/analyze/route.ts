@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { createJob } from "@/lib/jobs/manager";
-import { runFullAnalysis } from "@/lib/jobs/analyzer";
+import { waitUntil } from "@vercel/functions";
+import { addProgress, createJob, setStatus } from "@/lib/jobs/manager";
+import { runNextStage } from "@/lib/jobs/pipeline";
 import type { AnalysisInput } from "@/lib/types";
+
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
@@ -16,7 +19,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Ensure URL has protocol
     const url = companyUrl.startsWith("http")
       ? companyUrl
       : `https://${companyUrl}`;
@@ -29,11 +31,20 @@ export async function POST(request: Request) {
     };
 
     const job = await createJob(input);
-
-    // Fire and forget -- analysis runs in background
-    runFullAnalysis(job.id).catch((err) => {
-      console.error(`Analysis failed for job ${job.id}:`, err);
-    });
+    await setStatus(job.id, "scraping-website");
+    await addProgress(
+      job.id,
+      "Scanning website",
+      "Starting deployed scanner..."
+    );
+    waitUntil(
+      runNextStage(job.id).catch(async (err) => {
+        const msg = err instanceof Error ? err.message : "Pipeline failed";
+        console.error(`Initial pipeline stage failed for ${job.id}:`, err);
+        await setStatus(job.id, "error");
+        await addProgress(job.id, "Error", msg);
+      })
+    );
 
     return NextResponse.json({ jobId: job.id });
   } catch (error) {

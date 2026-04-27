@@ -3,8 +3,12 @@
 import type { Job } from "@/lib/types";
 
 export function StatGrid({ job }: { job: Job }) {
-  const companyAdCount = job.companyAdCount || 0;
+  // companyAdCount from Meta Ad Library is unreliable from automated
+  // requests (Meta IP-blocks the brand-total endpoints). Show what we
+  // actually captured + analyzed instead — that's the honest number.
+  const adsCaptured = (job.companyAds || []).length;
   const videoCount = job.companyVideoCount || 0;
+  const companyAdCount = adsCaptured;
   const competitorCount = job.competitorData?.length || 0;
   const totalCompetitorAds =
     job.competitorData?.reduce(
@@ -23,8 +27,8 @@ export function StatGrid({ job }: { job: Job }) {
     <dl className="grid grid-cols-2 divide-x divide-y divide-hairline border-y hairline md:grid-cols-4 md:divide-y-0">
       <Stat
         value={companyAdCount > 0 ? `${companyAdCount}` : "0"}
-        label="Active ads"
-        sub={videoCount > 0 ? `${videoCount} video · ${companyAdCount - videoCount} image` : undefined}
+        label="Ads analyzed"
+        sub={videoCount > 0 ? `${adsCaptured} image · ${videoCount} video skipped` : undefined}
       />
       <Stat
         value={totalCompetitorAds > 0 ? `${totalCompetitorAds}` : "0"}

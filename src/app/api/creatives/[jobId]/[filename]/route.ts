@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
+import { STORAGE_ROOT } from "@/lib/storage-root";
 
 export async function GET(
   _request: Request,
@@ -10,7 +11,7 @@ export async function GET(
   if (!/^[a-z0-9-]+$/i.test(jobId) || !/^[a-z0-9.-]+$/i.test(filename)) {
     return NextResponse.json({ error: "Bad path" }, { status: 400 });
   }
-  const fullPath = path.join(process.cwd(), "data", "jobs", jobId, "creatives", filename);
+  const fullPath = path.join(STORAGE_ROOT, "jobs", jobId, "creatives", filename);
   try {
     const buf = await fs.readFile(fullPath);
     const ext = path.extname(filename).toLowerCase();

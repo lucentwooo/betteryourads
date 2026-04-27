@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { suggestCompetitors } from "@/lib/ai/diagnosis";
-import { scrapeWebsite } from "@/lib/scraper/website-scraper";
-import path from "path";
-import fs from "fs/promises";
+import { fetchPageText } from "@/lib/scraper/fetch-page";
+
+// No chromium here. This endpoint just needs title + meta + a few headings
+// to ask Claude for competitors — a plain HTTPS fetch is ~1-2s instead of
+// 20-60s for a serverless chromium cold start.
+export const maxDuration = 30;
 
 export async function POST(request: Request) {
   try {
-    const { companyName, companyUrl } = await request.json();
+    const { companyName, companyUrl, cheap } = await request.json();
 
     if (!companyName || !companyUrl) {
       return NextResponse.json(
@@ -19,37 +22,29 @@ export async function POST(request: Request) {
       ? companyUrl
       : `https://${companyUrl}`;
 
-    // Quick scrape just for text content
-    const tmpDir = path.join(process.cwd(), "data", "jobs", "_temp");
-    await fs.mkdir(tmpDir, { recursive: true });
-
     let websiteContent = "";
     try {
-      const websiteResult = await scrapeWebsite(url, tmpDir);
-      websiteContent = websiteResult.textContent;
+      const { summary } = await fetchPageText(url);
+      websiteContent = summary;
     } catch (scrapeError) {
-      console.error("Website scrape failed, continuing with name only:", scrapeError);
+      console.error(
+        "[suggest-competitors] fetch failed, falling back to name only:",
+        scrapeError instanceof Error ? scrapeError.message : scrapeError
+      );
     }
 
     const competitors = await suggestCompetitors(
       companyName,
       url,
-      websiteContent || `Company called ${companyName} at ${url}`
+      websiteContent || `Company called ${companyName} at ${url}`,
+      { cheap: Boolean(cheap) },
     );
-
-    // Clean up temp files
-    try {
-      await fs.rm(tmpDir, { recursive: true });
-    } catch {
-      // ignore cleanup errors
-    }
 
     return NextResponse.json({ competitors });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("Failed to suggest competitors:", errorMessage);
+    console.error("[suggest-competitors] failed:", errorMessage);
 
-    // Return the error message so the frontend can show it
     return NextResponse.json(
       {
         error: errorMessage.includes("credit balance")
@@ -57,7 +52,7 @@ export async function POST(request: Request) {
           : `Failed to suggest competitors: ${errorMessage}`,
         competitors: [],
       },
-      { status: 200 } // Return 200 so frontend can still show the competitor input
+      { status: 200 }
     );
   }
 }

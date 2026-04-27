@@ -68,19 +68,21 @@ export function AdGallery({
         </div>
         {totalCount ? (
           <div className="text-right">
-            <div className="text-2xl font-bold">{totalCount}</div>
+            <div className="text-2xl font-bold">{ads.length}</div>
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Active ads
+              Captured
             </div>
           </div>
         ) : null}
       </div>
       {totalCount && totalCount > 0 && (
         <p className="text-sm text-muted-foreground">
-          Showing {ads.length} of {totalCount}+ active ads
+          Captured {ads.length} representative ad{ads.length === 1 ? "" : "s"} from Meta Ad Library
           {videoCount && videoCount > 0
-            ? ` - ${videoCount} are video ads (we show the thumbnail, not the video)`
+            ? ` (${videoCount} more were video — we show image ads only)`
             : ""}
+          . Meta's library hides the brand's full count from automated requests; manually
+          search the brand on the Ad Library to see their total.
         </p>
       )}
 

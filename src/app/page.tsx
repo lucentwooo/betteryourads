@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowUpRight, Check, Loader2, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,8 @@ interface CompetitorSuggestion {
 export default function HomePage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("input");
+  const [demoMode, setDemoMode] = useState(false);
+  const [cheapMode, setCheapMode] = useState(false);
 
   const [companyName, setCompanyName] = useState("");
   const [companyUrl, setCompanyUrl] = useState("");
@@ -33,16 +35,44 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setDemoMode(
+      params.get("demo") === "1" ||
+        process.env.NEXT_PUBLIC_DEMO_MODE === "1"
+    );
+    setCheapMode(params.get("cheap") === "1");
+  }, []);
+
+  useEffect(() => {
+    if (!demoMode) return;
+    setCompanyName((v) => v || "Tally");
+    setCompanyUrl((v) => v || "https://tally.so");
+    setSuggestedCompetitors((v) =>
+      v.length
+        ? v
+        : [
+            { name: "Typeform", searchTerm: "Typeform" },
+            { name: "Jotform", searchTerm: "Jotform" },
+            { name: "Google Forms", searchTerm: "Google Forms" },
+          ]
+    );
+  }, [demoMode]);
+
   async function handleInitialSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName || !companyUrl) return;
+    if (demoMode) {
+      setStep("competitors");
+      return;
+    }
     setLoadingCompetitors(true);
     setStep("competitors");
     try {
       const res = await fetch("/api/suggest-competitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyName, companyUrl }),
+        body: JSON.stringify({ companyName, companyUrl, cheap: cheapMode }),
       });
       const data = await res.json();
       setSuggestedCompetitors(data.competitors || []);
@@ -70,7 +100,7 @@ export default function HomePage() {
     setSubmitting(true);
     setStep("submitting");
     try {
-      const res = await fetch("/api/analyze", {
+      const res = await fetch(demoMode ? "/api/mock-analyze" : "/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -81,7 +111,10 @@ export default function HomePage() {
           icpDescription: icpDescription || undefined,
           notes: notes || undefined,
           adContentDescription: adContentDescription || undefined,
-          competitors: suggestedCompetitors.map((c) => c.name),
+          competitors: cheapMode
+            ? suggestedCompetitors.slice(0, 1).map((c) => c.name)
+            : suggestedCompetitors.map((c) => c.name),
+          testMode: cheapMode ? "cheap" : undefined,
         }),
       });
       const data = await res.json();
@@ -120,6 +153,8 @@ export default function HomePage() {
         customCompetitor={customCompetitor}
         setCustomCompetitor={setCustomCompetitor}
         apiError={apiError}
+        demoMode={demoMode}
+        cheapMode={cheapMode}
         onInitialSubmit={handleInitialSubmit}
         onAddCompetitor={addCompetitor}
         onRemoveCompetitor={removeCompetitor}
@@ -190,6 +225,8 @@ type HeroProps = {
   suggestedCompetitors: CompetitorSuggestion[];
   customCompetitor: string; setCustomCompetitor: (v: string) => void;
   apiError: string | null;
+  demoMode: boolean;
+  cheapMode: boolean;
   onInitialSubmit: (e: React.FormEvent) => void;
   onAddCompetitor: () => void;
   onRemoveCompetitor: (i: number) => void;
@@ -483,7 +520,7 @@ function CompetitorsStep(p: HeroProps) {
                 </>
               ) : (
                 <>
-                  Run full analysis
+                  {p.demoMode ? "Run demo analysis" : p.cheapMode ? "Run cheap test" : "Run full analysis"}
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}

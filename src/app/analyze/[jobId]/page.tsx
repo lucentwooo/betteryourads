@@ -25,10 +25,13 @@ const SECTIONS: { id: string; num: string; label: string }[] = [
 export default function AnalyzePage() {
   const params = useParams();
   const jobId = params.jobId as string;
+  const isMockJob = jobId.startsWith("mock-");
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string>("brand");
+  const [now, setNow] = useState(() => Date.now());
   const rootRef = useRef<HTMLElement | null>(null);
+  const advancingRef = useRef(false);
 
   const fetchJob = useCallback(async () => {
     try {
@@ -46,15 +49,84 @@ export default function AnalyzePage() {
 
   useEffect(() => {
     fetchJob();
+    const clock = setInterval(() => setNow(Date.now()), 1000);
     const interval = setInterval(() => {
-      if (job?.status === "complete" || job?.status === "error") {
+      if (
+        job?.status === "complete" ||
+        job?.status === "awaiting-approval" ||
+        job?.status === "error"
+      ) {
         clearInterval(interval);
         return;
       }
       fetchJob();
     }, 2000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(clock);
+      clearInterval(interval);
+    };
   }, [fetchJob, job?.status]);
+
+  useEffect(() => {
+    if (
+      !job ||
+      job.status === "complete" ||
+      job.status === "awaiting-approval" ||
+      job.status === "error" ||
+      isMockJob ||
+      advancingRef.current
+    ) {
+      return;
+    }
+
+    const justStartedScanner =
+      job.status === "scraping-website" &&
+      job.progress.length <= 1 &&
+      Date.now() - new Date(job.createdAt).getTime() < 10_000;
+    if (justStartedScanner) return;
+
+    let cancelled = false;
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function advanceUntilDone() {
+      advancingRef.current = true;
+      try {
+        while (!cancelled) {
+          const res = await fetch(`/api/jobs/${jobId}/advance`, {
+            method: "POST",
+          });
+          const data = (await res.json().catch(() => ({}))) as {
+            done?: boolean;
+            status?: Job["status"];
+          };
+
+          await fetchJob();
+
+          if (
+            !res.ok ||
+            data.done ||
+            data.status === "complete" ||
+            data.status === "awaiting-approval" ||
+            data.status === "error"
+          ) {
+            break;
+          }
+
+          await delay(250);
+        }
+      } catch (err) {
+        console.error("[analyze] advance failed; polling will keep retrying", err);
+        await delay(2000);
+      } finally {
+        advancingRef.current = false;
+      }
+    }
+
+    void advanceUntilDone();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchJob, isMockJob, job, jobId]);
 
   // Scroll reveals + active-section tracking. Runs once the report renders.
   useEffect(() => {
@@ -122,17 +194,22 @@ export default function AnalyzePage() {
       <main className="min-h-screen bg-paper">
         <div className="mx-auto max-w-2xl px-4">
           <ProgressTracker
+            jobId={job.id}
             status={job.status}
             progress={job.progress}
             error={job.error}
+            now={now}
           />
         </div>
       </main>
     );
   }
 
+  // Blob URLs come back as full https; legacy local paths contain "data/jobs/".
   const websiteScreenshotUrl = job.websiteScreenshot
-    ? `/api/screenshots/${job.websiteScreenshot.split("data/jobs/").pop()}`
+    ? job.websiteScreenshot.includes("data/jobs/")
+      ? `/api/screenshots/${job.websiteScreenshot.split("data/jobs/").pop()}`
+      : job.websiteScreenshot
     : undefined;
 
   const company = job.input?.companyName || "this company";

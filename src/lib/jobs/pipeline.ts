@@ -1,0 +1,822 @@
+import path from "path";
+import { getJob, updateJob, addProgress, setStatus, getJobDir } from "./manager";
+import { upsertBrandFromJob } from "../brands/manager";
+import { fetchPageText } from "../scraper/fetch-page";
+import { scrapeWebsite } from "../scraper/website-scraper";
+import {
+  extractBrandColorsFromScreenshot,
+  extractBrandColorsFromUrl,
+} from "../ai/brand-vision";
+import { scrapeMetaAdLibrary } from "../scraper/meta-ad-scraper";
+import { generateBrandDosAndDonts } from "../ai/diagnosis";
+import { runResearcher, runResearcherCheap } from "../agents/researcher";
+import { runStrategist } from "../agents/strategist";
+import { runCreativeDirector } from "../agents/creative-director";
+import type { BrandProfile, CompetitorData, DiagnosisResult, Job, VoiceOfCustomer } from "../types";
+
+// Hard cap for any single Meta Ad Library scrape. Chromium cold-launch
+// in serverless can hang indefinitely on the tarball download; without a
+// timeout it chews the whole 300s function budget. We'd rather skip ads
+// for that brand than break the whole pipeline.
+const META_SCRAPE_TIMEOUT_MS = 145_000;
+const WEBSITE_SCREENSHOT_TIMEOUT_MS = 80_000;
+const STRATEGIST_TIMEOUT_MS = 240_000;
+
+// Mirrors countryFromDomain in meta-ad-scraper.ts. Kept here so we can
+// derive country context for competitor scrapes without re-exporting
+// internals from the scraper module.
+function countryFromCompanyUrl(raw?: string): string {
+  if (!raw) return "ALL";
+  let host = "";
+  try {
+    const u = raw.startsWith("http") ? new URL(raw) : new URL(`https://${raw}`);
+    host = u.hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "ALL";
+  }
+  const tldMap: Record<string, string> = {
+    "com.au": "AU", "co.uk": "GB", "co.nz": "NZ", "co.za": "ZA",
+    "co.in": "IN", "com.br": "BR", "com.mx": "MX", "com.sg": "SG",
+    ca: "CA", de: "DE", fr: "FR", es: "ES", it: "IT", jp: "JP",
+    kr: "KR", nl: "NL", se: "SE", no: "NO", dk: "DK", ie: "IE",
+  };
+  for (const [tld, code] of Object.entries(tldMap)) {
+    if (host.endsWith("." + tld)) return code;
+  }
+  return "ALL";
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
+const DEFAULT_BRAND: Omit<BrandProfile, "dosAndDonts"> = {
+  colors: {
+    primary: "#111111",
+    secondary: "#ffffff",
+    accent: "#111111",
+    background: "#ffffff",
+    text: "#111111",
+  },
+  typography: {
+    primary: "Inter",
+    secondary: "Inter",
+    headingWeight: 700,
+    bodyWeight: 400,
+  },
+  visualStyle: {
+    mode: "light",
+    ctaShape: "rounded",
+    corners: "rounded",
+    aesthetic: "clean, modern",
+  },
+  tone: "confident, clear, customer-focused",
+};
+
+function isCheapTest(job: Job): boolean {
+  return job.input.testMode === "cheap";
+}
+
+function cheapModeVoc(companyName: string): VoiceOfCustomer {
+  return {
+    sources: {
+      redditSubs: [],
+      reviewSites: [],
+      forums: [],
+    },
+    snippets: [],
+    languagePatterns: [
+      {
+        name: "Cheap test mode placeholder",
+        description: "VoC web search was skipped so the production agents page can be tested without Anthropic web-search spend.",
+        snippetRefs: [],
+      },
+    ],
+    painPoints: [
+      {
+        name: "Need faster creative clarity",
+        description: `${companyName} buyers likely need clearer reasons to care, compare, and act.`,
+        snippetRefs: [],
+      },
+    ],
+    desires: [
+      {
+        name: "Lower-risk decision",
+        description: "Customers want proof, specificity, and a confident next step before they commit.",
+        snippetRefs: [],
+      },
+    ],
+    objections: [
+      {
+        name: "Trust and differentiation uncertainty",
+        description: "Prospects may need clearer evidence for why this is better than alternatives.",
+        snippetRefs: [],
+      },
+    ],
+    reportMd: "# Cheap test mode VoC\n\nReal VoC research skipped to save API credits during progression testing.",
+    generatedAt: new Date().toISOString(),
+    qa: {
+      pass: true,
+      score: 7,
+      issues: ["Cheap test mode skips live VoC web search."],
+      feedbackForRetry: "Run the full mode when ready for production-quality customer quotes.",
+      retries: 0,
+    },
+  };
+}
+
+// The full pipeline exceeds the 300s Hobby function cap if run in one
+// invocation. We split it into stages; each stage runs in its own
+// serverless invocation and self-triggers the next via fetch.
+//
+// State lives in KV (Redis), so no in-memory data carries between
+// invocations. Every stage reloads the job from getJob().
+
+export type StageResult = { done: boolean };
+
+async function stageWebsiteAndBrand(jobId: string): Promise<void> {
+  const job = await getJob(jobId);
+  if (!job) return;
+  const jobDir = getJobDir(jobId);
+
+  await setStatus(jobId, "scraping-website");
+  await addProgress(
+    jobId,
+    "Scanning website",
+    `Capturing screenshot and reading ${job.input.companyUrl}...`
+  );
+
+  // Screenshot is the product promise, but it must not be a single point
+  // of failure. If Chromium cold-starts slowly or a site fights headless
+  // browsers, we fall back to fast HTML extraction and keep the pipeline
+  // moving instead of leaving users stuck on "Scanning site".
+  let screenshotError: string | null = null;
+  const screenshotTrace: string[] = [];
+  const [screenshotRes, pageRes] = await Promise.all([
+    withTimeout(
+      scrapeWebsite(job.input.companyUrl, jobDir, undefined, (s) => {
+        screenshotTrace.push(`[${new Date().toISOString().slice(11, 19)}] ${s}`);
+      }),
+      WEBSITE_SCREENSHOT_TIMEOUT_MS,
+      `scrapeWebsite(${job.input.companyUrl})`
+    ).catch((err) => {
+      screenshotError = err instanceof Error ? err.message : String(err);
+      console.error("[pipeline] scrapeWebsite failed:", err);
+      return null;
+    }),
+    fetchPageText(job.input.companyUrl).catch((err) => {
+      console.error("[pipeline] fetchPageText failed:", err);
+      return null;
+    }),
+  ]);
+  if (screenshotError) {
+    // Surface the LAST few step entries — they tell us which line the
+    // page session died on. Vercel runtime logs are unreliable; this is.
+    const lastSteps = screenshotTrace.slice(-8).join(" | ");
+    await addProgress(
+      jobId,
+      "Website screenshot error",
+      `${screenshotError} || trace: ${lastSteps}`,
+    );
+  } else if (screenshotRes && screenshotTrace.length > 0) {
+    // Also surface the trace on success — useful when a screenshot lands
+    // but the captured image is the wrong page.
+    await addProgress(
+      jobId,
+      "Website screenshot trace",
+      screenshotTrace.slice(-6).join(" | "),
+    );
+  }
+
+  const websiteContent =
+    screenshotRes?.textContent ||
+    pageRes?.textContent ||
+    pageRes?.summary ||
+    `Company: ${job.input.companyName}`;
+
+  await updateJob(jobId, {
+    websiteContent,
+    ...(screenshotRes?.screenshotPath
+      ? { websiteScreenshot: screenshotRes.screenshotPath }
+      : pageRes?.ogImage
+      ? { websiteScreenshot: pageRes.ogImage }
+      : {}),
+    // Persist any Facebook usernames we found in the brand's own
+    // website footer/links — most reliable hint for the brand's
+    // official FB page. The ad scraper uses these as a hint before
+    // falling back to Perplexity.
+    ...(screenshotRes && "facebookUsernames" in screenshotRes && screenshotRes.facebookUsernames?.length
+      ? { brandFacebookUsernames: screenshotRes.facebookUsernames }
+      : {}),
+  });
+  await addProgress(
+    jobId,
+    "Website scanned",
+    screenshotRes
+      ? `Captured screenshot and extracted ${websiteContent.length} characters`
+      : pageRes
+      ? `Screenshot unavailable; extracted ${websiteContent.length} characters${
+          pageRes.ogImage ? " and found og:image" : ""
+        }`
+      : "Could not fetch homepage — continuing with company name only"
+  );
+
+  await setStatus(jobId, "extracting-brand");
+  const cheap = isCheapTest(job);
+
+  await addProgress(
+    jobId,
+    "Extracting brand identity",
+    cheap
+      ? "Cheap mode — reading brand colors via Gemini Flash..."
+      : screenshotRes?.localScreenshotPath
+      ? "Reading brand colors from website screenshot..."
+      : pageRes?.ogImage
+      ? "Screenshot unavailable — reading brand colors from og:image..."
+      : "No og:image — using neutral default palette"
+  );
+
+  let profile: Omit<BrandProfile, "dosAndDonts"> = DEFAULT_BRAND;
+  if (screenshotRes?.localScreenshotPath || pageRes?.ogImage) {
+    const vision = screenshotRes?.localScreenshotPath
+      ? await extractBrandColorsFromScreenshot(
+          screenshotRes.localScreenshotPath,
+          { cheap },
+        ).catch(() => null)
+      : await extractBrandColorsFromUrl(pageRes!.ogImage!, { cheap }).catch(
+          () => null,
+        );
+    if (vision) {
+      profile = {
+        ...DEFAULT_BRAND,
+        colors: {
+          primary: vision.primary,
+          secondary: vision.secondary,
+          accent: vision.accent,
+          background: vision.background,
+          text: vision.text,
+        },
+      };
+      await addProgress(
+        jobId,
+        "Palette extracted",
+        `${vision.primary} / ${vision.secondary} / ${vision.accent} (${vision.confidence})`
+      );
+    } else {
+      await addProgress(
+        jobId,
+        "Palette fallback",
+        "Vision couldn't read og:image — using neutral default"
+      );
+    }
+  }
+
+  const dosAndDonts = await generateBrandDosAndDonts(profile, websiteContent, {
+    cheap,
+  }).catch((err) => {
+    console.error("[pipeline] dosAndDonts failed:", err);
+    return { do: [], dont: [] };
+  });
+
+  const brandProfile: BrandProfile = { ...profile, dosAndDonts };
+
+  await updateJob(jobId, { brandProfile });
+  await addProgress(
+    jobId,
+    "Brand extracted",
+    `Primary ${brandProfile.colors.primary}, font ${brandProfile.typography.primary}`
+  );
+
+  await setStatus(jobId, "scraping-ads");
+}
+
+async function stageCompanyAds(jobId: string): Promise<void> {
+  const job = await getJob(jobId);
+  if (!job) return;
+  const jobDir = getJobDir(jobId);
+  const adsDir = path.join(jobDir, "ads");
+
+  await addProgress(jobId, "Searching Meta Ad Library", `Looking for ${job.input.companyName} ads...`);
+
+  const companyAdsResult = await withTimeout(
+    scrapeMetaAdLibrary(
+      job.input.companyName,
+      adsDir,
+      "company",
+      job.input.companyUrl,
+      // Hand the scraper the FB usernames found in the brand's own website,
+      // so it can skip guessing and go straight to the right page.
+      { hintedUsernames: job.brandFacebookUsernames },
+    ),
+    META_SCRAPE_TIMEOUT_MS,
+    `scrapeMetaAdLibrary(${job.input.companyName})`
+  ).catch((err) => ({
+    success: false,
+    ads: [],
+    totalCount: 0,
+    videoCount: 0,
+    imageCount: 0,
+    reason:
+      err instanceof Error
+        ? err.message
+        : "Meta Ad Library scrape failed",
+    trace: [`pipeline-catch: ${err instanceof Error ? err.message : String(err)}`],
+  }));
+
+  const existingTrace = (await getJob(jobId))?.scraperTrace ?? {};
+  const trace = (companyAdsResult as { trace?: string[] }).trace ?? [];
+  await updateJob(jobId, {
+    companyAds: companyAdsResult.ads,
+    companyAdCount: companyAdsResult.totalCount || 0,
+    companyVideoCount: companyAdsResult.videoCount || 0,
+    companyImageCount: companyAdsResult.imageCount || 0,
+    scraperTrace: {
+      ...existingTrace,
+      [job.input.companyName]: trace,
+    },
+  });
+  // Surface the trace inside progress[] too — Vercel KV occasionally drops
+  // unknown top-level fields on round-trip and progress[] is the only place
+  // we know is durably persisted and visible via the UI.
+  if (trace.length > 0) {
+    await addProgress(
+      jobId,
+      "Ad scraper trace",
+      trace.join(" | "),
+    );
+  }
+
+  if (companyAdsResult.success) {
+    await addProgress(
+      jobId,
+      "Ads found",
+      `${companyAdsResult.totalCount || 0} total, ${companyAdsResult.videoCount || 0} video, captured ${companyAdsResult.ads.length} image ads`
+    );
+  } else {
+    await addProgress(jobId, "No image ads", companyAdsResult.reason || "Could not find ads in Meta Ad Library");
+  }
+
+  await setStatus(jobId, "scraping-competitor-ads");
+  await updateJob(jobId, { competitorData: [] });
+}
+
+async function stageOneCompetitor(jobId: string): Promise<boolean> {
+  // Returns true when all competitors have been processed.
+  const job = await getJob(jobId);
+  if (!job) return true;
+
+  const done = job.competitorData ?? [];
+  const remaining = (job.input.competitors || []).slice(done.length);
+  if (remaining.length === 0) return true;
+
+  const jobDir = getJobDir(jobId);
+  const adsDir = path.join(jobDir, "ads");
+  const competitorName = remaining[0];
+
+  await addProgress(jobId, "Researching competitor", `Searching ads for ${competitorName}...`);
+
+  // Competitors inherit the analyzed brand's COUNTRY context only — never
+  // the brand's URL. Passing the URL caused the scraper to fall back to
+  // searching for the brand's domain stem ("omodajaecoo") when the
+  // competitor name returned no matches, surfacing OUR brand's foreign
+  // ads as the competitor's ads.
+  const brandCountry = countryFromCompanyUrl(job.input.companyUrl);
+  const competitorResult = await withTimeout(
+    scrapeMetaAdLibrary(
+      competitorName,
+      adsDir,
+      competitorName.toLowerCase().replace(/\s+/g, "-"),
+      undefined,
+      { countryOverride: brandCountry },
+    ),
+    META_SCRAPE_TIMEOUT_MS,
+    `scrapeMetaAdLibrary(${competitorName})`
+  ).catch((err) => ({
+    success: false,
+    ads: [],
+    totalCount: 0,
+    videoCount: 0,
+    imageCount: 0,
+    reason:
+      err instanceof Error ? err.message : "Meta Ad Library scrape failed",
+    trace: [`pipeline-catch: ${err instanceof Error ? err.message : String(err)}`],
+  }));
+
+  const entry: CompetitorData = {
+    name: competitorName,
+    ads: competitorResult.ads,
+    totalAdCount: competitorResult.totalCount || 0,
+    videoAdCount: competitorResult.videoCount || 0,
+    imageAdCount: competitorResult.imageCount || 0,
+  };
+
+  const existingTrace = (await getJob(jobId))?.scraperTrace ?? {};
+  const compTrace = (competitorResult as { trace?: string[] }).trace ?? [];
+  await updateJob(jobId, {
+    competitorData: [...done, entry],
+    scraperTrace: {
+      ...existingTrace,
+      [competitorName]: compTrace,
+    },
+  });
+  if (compTrace.length > 0) {
+    await addProgress(
+      jobId,
+      `${competitorName} scraper trace`,
+      compTrace.join(" | "),
+    );
+  }
+
+  await addProgress(
+    jobId,
+    `${competitorName} done`,
+    competitorResult.success
+      ? `Found ${competitorResult.ads.length} ads`
+      : competitorResult.reason || "No ads found"
+  );
+
+  return done.length + 1 >= (job.input.competitors || []).length;
+}
+
+async function stageResearcher(jobId: string): Promise<void> {
+  const job = await getJob(jobId);
+  if (!job) return;
+
+  const cheap = isCheapTest(job);
+  await addProgress(
+    jobId,
+    "Researcher agent",
+    cheap
+      ? "Hunting customer quotes via Perplexity Sonar (cheap mode)"
+      : "Hunting real customer quotes across Reddit + reviews",
+    { agent: "researcher" },
+  );
+
+  const runner = cheap ? runResearcherCheap : runResearcher;
+  const voc = await runner(job.input, async (msg) => {
+    const outcome = msg.includes("pass")
+      ? "pass"
+      : msg.includes("retry")
+      ? "retry"
+      : msg.includes("escalate")
+      ? "escalate"
+      : undefined;
+    await addProgress(jobId, "Researcher", msg, { agent: "researcher", qaOutcome: outcome });
+  }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[pipeline] researcher failed:", err);
+    await addProgress(jobId, "Researcher fallback", msg, {
+      agent: "researcher",
+      qaOutcome: "escalate",
+    });
+    return cheapModeVoc(job.input.companyName);
+  });
+
+  await updateJob(jobId, { voc });
+  await addProgress(
+    jobId,
+    "VoC synthesized",
+    `${voc.snippets.length} snippets, ${voc.painPoints.length} pain points, ${voc.languagePatterns.length} language patterns`,
+    { agent: "researcher", qaOutcome: voc.qa?.pass ? "pass" : "escalate" }
+  );
+
+  await setStatus(jobId, "analyzing");
+}
+
+function fallbackDiagnosis(job: Job, reason: string): DiagnosisResult {
+  const company = job.input.companyName;
+  const competitors = (job.competitorData || []).map((c) => c.name).join(", ");
+  const websiteExcerpt = (job.websiteContent || "").slice(0, 500);
+  const vocPain =
+    job.voc?.painPoints?.slice(0, 3).map((p) => p.name).join(", ") ||
+    "limited VoC signal";
+
+  const raw = `## TL;DR
+${company} needs a clearer creative testing plan, but the full Strategist agent could not finish in time. Use this as a conservative fallback, then rerun analysis for a richer diagnosis.
+
+## Executive Summary
+- Website signal reviewed: ${websiteExcerpt || "not enough website text was available"}.
+- Competitor set reviewed: ${competitors || "no competitors supplied"}.
+- VoC patterns available: ${vocPain}.
+- Fallback reason: ${reason}.
+
+## Brand Profile
+${company} should keep the strongest recognizable brand cues from the website screenshot and avoid generic category visuals until the full diagnosis can complete.
+
+## Doing Well
+The pipeline found enough website and research context to continue into concept planning rather than blocking the user.
+
+## Not Working
+The diagnosis agent exceeded the production time budget. That makes the output less specific than the normal strategist pass.
+
+## Competitor Wins
+Competitor data was collected for: ${competitors || "none"}. Use these names as the starting benchmark for angle selection.
+
+## Missing Opportunities
+Test clearer problem-aware and product-aware hooks grounded in the strongest customer pain patterns: ${vocPain}.
+
+## Awareness Stage Analysis
+Prioritize Problem Aware and Solution Aware concepts first, then use Product Aware proof once stronger competitor and VoC evidence is available.
+
+## Recommended Next-Test Concepts
+1. Problem-aware pain callout for the main customer frustration.
+2. Solution-aware comparison against the most direct competitor.
+3. Product-aware proof ad using the website/product visual language.
+4. Objection-handling ad based on the strongest VoC objection.
+
+## Suggested Test Plan
+Run 3-4 fast concept tests with small budgets, then rerun the full strategist pass once the production timeout issue is resolved.`;
+
+  return {
+    tldr: `${company} needs a clearer creative testing plan; this is a fallback because the full Strategist agent timed out.`,
+    executiveSummary: `Website reviewed, competitors considered (${competitors || "none"}), VoC patterns considered (${vocPain}). Fallback reason: ${reason}.`,
+    brandProfile: `${company} should preserve recognizable brand cues from the website screenshot and avoid generic category visuals.`,
+    doingWell: "The pipeline collected enough context to continue into concept planning rather than blocking the user.",
+    notWorking: "The full diagnosis agent exceeded the production time budget, so this diagnosis is intentionally conservative.",
+    competitorWins: competitors
+      ? `Competitor data was collected for ${competitors}; use those brands as the benchmark.`
+      : "No competitor ad data was available for this fallback pass.",
+    missingOpportunities: `Test hooks grounded in the strongest customer pain patterns: ${vocPain}.`,
+    awarenessStageAnalysis: "Prioritize Problem Aware and Solution Aware concepts first, then layer Product Aware proof.",
+    recommendedConcepts: "Problem-aware pain callout; solution-aware comparison; product-aware proof; objection-handling ad.",
+    testPlan: "Run 3-4 fast concept tests with small budgets, then rerun the full strategist pass for a richer diagnosis.",
+    raw,
+    qa: {
+      pass: false,
+      score: 0,
+      issues: [`Fallback diagnosis used: ${reason}`],
+      feedbackForRetry: "Rerun strategist when the model responds within the production time budget.",
+      retries: 0,
+    },
+  };
+}
+
+async function stageStrategist(jobId: string): Promise<void> {
+  const job = await getJob(jobId);
+  if (!job || !job.voc || !job.brandProfile) return;
+
+  await addProgress(jobId, "Strategist agent", "Running 8-area diagnosis with VoC integration", { agent: "strategist" });
+
+  const diagnosis = await withTimeout(
+    runStrategist({
+      companyName: job.input.companyName,
+      companyUrl: job.input.companyUrl,
+      websiteContent: job.websiteContent || "",
+      landingPageContent: job.input.landingPageUrl ? job.websiteContent : undefined,
+      productDescription: job.input.productDescription,
+      icpDescription: job.input.icpDescription,
+      brandProfile: job.brandProfile,
+      companyAds: job.companyAds || [],
+      companyAdCount: job.companyAdCount,
+      companyVideoCount: job.companyVideoCount,
+      companyImageCount: job.companyImageCount,
+      competitors: job.competitorData || [],
+      notes: job.input.notes,
+      adContentDescription: job.input.adContentDescription,
+      voc: job.voc,
+      modelMode: isCheapTest(job) ? "cheap" : "full",
+    }, async (msg) => {
+      const outcome = msg.includes("pass")
+        ? "pass"
+        : msg.includes("retry")
+        ? "retry"
+        : msg.includes("escalate")
+        ? "escalate"
+        : undefined;
+      await addProgress(jobId, "Strategist", msg, { agent: "strategist", qaOutcome: outcome });
+    }),
+    STRATEGIST_TIMEOUT_MS,
+    "runStrategist"
+  ).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : "Strategist timed out";
+    console.error("[pipeline] strategist failed:", err);
+    await addProgress(jobId, "Strategist fallback", msg, {
+      agent: "strategist",
+      qaOutcome: "escalate",
+    });
+    return fallbackDiagnosis(job, msg);
+  });
+
+  await updateJob(jobId, { diagnosis });
+  // Surface a preview of the raw model output so failures are visible in the
+  // UI without grepping logs. Helps spot truncation, format drift, refusals.
+  await addProgress(
+    jobId,
+    "Strategist raw output",
+    `(${diagnosis.raw?.length ?? 0} chars) ${(diagnosis.raw || "(empty)").slice(0, 280)}`,
+    { agent: "strategist" },
+  );
+  await addProgress(jobId, "Diagnosis complete", `QA score ${diagnosis.qa?.score ?? "n/a"}`, { agent: "strategist", qaOutcome: diagnosis.qa?.pass ? "pass" : "escalate" });
+
+  await setStatus(jobId, "concept-architecting");
+}
+
+async function stageCreativeDirector(jobId: string): Promise<void> {
+  const job = await getJob(jobId);
+  if (!job || !job.diagnosis || !job.voc) return;
+
+  await addProgress(jobId, "Creative Director agent", "Architecting ranked concepts across awareness stages", { agent: "creative-director" });
+
+  const concepts = await runCreativeDirector({
+    diagnosis: job.diagnosis,
+    voc: job.voc,
+    companyName: job.input.companyName,
+    icpDescription: job.input.icpDescription,
+    modelMode: isCheapTest(job) ? "cheap" : "full",
+  }, async (msg) => {
+    const outcome = msg.includes("pass")
+      ? "pass"
+      : msg.includes("retry")
+      ? "retry"
+      : msg.includes("escalate")
+      ? "escalate"
+      : undefined;
+    await addProgress(jobId, "Creative Director", msg, { agent: "creative-director", qaOutcome: outcome });
+  }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : "Creative director failed";
+    console.error("[pipeline] creative director failed:", err);
+    await addProgress(jobId, "Creative Director fallback", msg, {
+      agent: "creative-director",
+      qaOutcome: "escalate",
+    });
+    return [] as Awaited<ReturnType<typeof runCreativeDirector>>;
+  });
+
+  await updateJob(jobId, { concepts });
+  await addProgress(
+    jobId,
+    "Concepts ready",
+    `${concepts.length} concepts across ${new Set(concepts.map((c) => c.awarenessStage)).size} awareness stages — awaiting your approval`,
+    { agent: "creative-director" },
+  );
+
+  await setStatus(jobId, "awaiting-approval");
+
+  const finalJob = await getJob(jobId);
+  if (finalJob) {
+    try {
+      await upsertBrandFromJob(finalJob);
+      await addProgress(jobId, "Brand record updated", "Saved to brand registry");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      await addProgress(jobId, "Brand record skipped", msg);
+    }
+  }
+}
+
+// Stages that spawn a Puppeteer browser. If two of these run concurrently
+// for the same job they fight for memory and crash each other with
+// TargetCloseError. The stageRunningSince lock guards them.
+const STAGE_LOCK_TTL_MS = 240_000;
+
+export async function runNextStage(jobId: string): Promise<StageResult> {
+  const job = await getJob(jobId);
+  if (!job) return { done: true };
+
+  // If another invocation started a stage recently and hasn't released the
+  // lock yet, bail out. The caller will simply poll again.
+  if (job.stageRunningSince) {
+    const startedMs = Date.parse(job.stageRunningSince);
+    if (!Number.isNaN(startedMs) && Date.now() - startedMs < STAGE_LOCK_TTL_MS) {
+      console.log(
+        `[pipeline] runNextStage(${jobId}) skipped — stage already running since ${job.stageRunningSince}`,
+      );
+      return { done: false };
+    }
+  }
+
+  await updateJob(jobId, { stageRunningSince: new Date().toISOString() });
+
+  try {
+    switch (job.status) {
+      case "queued":
+      case "scraping-website":
+      case "extracting-brand":
+        await stageWebsiteAndBrand(jobId);
+        return { done: false };
+
+      case "scraping-ads":
+        await stageCompanyAds(jobId);
+        return { done: false };
+
+      case "scraping-competitor-ads": {
+        const allDone = await stageOneCompetitor(jobId);
+        if (allDone) await setStatus(jobId, "voc-research");
+        return { done: false };
+      }
+
+      case "voc-research":
+        await stageResearcher(jobId);
+        return { done: false };
+
+      case "analyzing":
+        await stageStrategist(jobId);
+        return { done: false };
+
+      case "concept-architecting":
+        await stageCreativeDirector(jobId);
+        return { done: true };
+
+      default:
+        return { done: true };
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    await updateJob(jobId, { error: errorMessage });
+    await setStatus(jobId, "error");
+    await addProgress(jobId, "Error", errorMessage);
+    return { done: true };
+  } finally {
+    await updateJob(jobId, { stageRunningSince: null });
+  }
+}
+
+// Run as many stages as we can inside a single invocation (each stage
+// loads state from KV at its start, so there's no downside to batching).
+// Only hand off to a fresh invocation when we're close to the 300s cap.
+const STAGE_BUDGET_MS = 240_000;
+
+export async function runStagesUntilBudget(
+  jobId: string
+): Promise<{ handoff: boolean }> {
+  const deadline = Date.now() + STAGE_BUDGET_MS;
+  while (Date.now() < deadline) {
+    const result = await runNextStage(jobId);
+    if (result.done) return { handoff: false };
+  }
+  return { handoff: true };
+}
+
+// Fire a request at our own /advance endpoint so the next batch of
+// stages runs in a fresh serverless invocation. On Vercel Preview
+// deployments, deployment protection blocks same-origin serverless
+// fetches unless we attach the bypass header. Enable "Protection Bypass
+// for Automation" in project settings — Vercel auto-provisions
+// VERCEL_AUTOMATION_BYPASS_SECRET.
+export async function triggerNextStage(jobId: string): Promise<void> {
+  // Prefer branch-stable URL when available — the per-deployment VERCEL_URL
+  // on preview can 30X-redirect through auth even with the bypass header.
+  const host =
+    process.env.VERCEL_BRANCH_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL;
+  const base = host
+    ? `https://${host}`
+    : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const qs = bypass
+    ? `?x-vercel-protection-bypass=${encodeURIComponent(
+        bypass
+      )}&x-vercel-set-bypass-cookie=true`
+    : "";
+  const url = `${base}/api/jobs/${jobId}/advance${qs}`;
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (bypass) {
+    headers["x-vercel-protection-bypass"] = bypass;
+    headers["x-vercel-set-bypass-cookie"] = "true";
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      redirect: "manual",
+    });
+    // 0 (opaqueredirect), 3xx → protection bypass didn't take. Surface this
+    // in the job record so we don't silently hang at the current stage.
+    if (res.status === 0 || (res.status >= 300 && res.status < 400)) {
+      const msg = `Handoff to /advance got ${res.status}${
+        res.headers.get("location") ? ` → ${res.headers.get("location")}` : ""
+      }. Check VERCEL_AUTOMATION_BYPASS_SECRET / Protection Bypass for Automation setting.`;
+      console.error(msg);
+      await updateJob(jobId, { error: msg });
+      await setStatus(jobId, "error");
+      await addProgress(jobId, "Handoff failed", msg);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to trigger next stage for ${jobId}:`, err);
+    await updateJob(jobId, { error: `Handoff fetch failed: ${msg}` });
+    await setStatus(jobId, "error");
+    await addProgress(jobId, "Handoff failed", msg);
+  }
+}

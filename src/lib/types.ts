@@ -205,6 +205,7 @@ export interface AnalysisInput {
   notes?: string;
   adContentDescription?: string;
   uploadedScreenshots?: string[];
+  testMode?: "cheap";
 }
 
 export type JobStatus =
@@ -253,4 +254,17 @@ export interface Job {
   error?: string;
   createdAt: string;
   completedAt?: string;
+  /** ISO timestamp set when a pipeline stage begins; cleared when it ends.
+   * Used as a lightweight lock so /api/analyze and /api/jobs/.../advance
+   * don't end up running the same stage concurrently (which spawned two
+   * Puppeteer browsers and crashed both with TargetCloseError). */
+  stageRunningSince?: string | null;
+  /** Per-brand scraper diagnostic trace. Keyed by the search term passed to
+   * scrapeMetaAdLibrary (company name or competitor name). Persisted to the
+   * job so we can diagnose ad-scraping failures without relying on Vercel
+   * runtime logs (which silently drop most output under load). */
+  scraperTrace?: Record<string, string[]>;
+  /** Facebook usernames found in the brand's own website footer/links.
+   * Far more reliable than guessing or asking Perplexity. */
+  brandFacebookUsernames?: string[];
 }

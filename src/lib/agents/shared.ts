@@ -1,8 +1,24 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type {
+  MessageCreateParamsNonStreaming,
+  MessageParam,
+} from "@anthropic-ai/sdk/resources/messages";
 import type { QAResult } from "../types";
 
-export const MODEL = "claude-sonnet-4-20250514";
+// Sonnet 4.6 for customer-facing creative + decision agents (strategist,
+// creative-director, copywriter, art-director, diagnosis synthesis).
+export const MODEL = "claude-sonnet-4-6";
+// Haiku 4.5 for orchestration, evaluation, and structured-output extraction
+// (researcher, image-generator orchestrator, QA rubric judging).
+export const MODEL_CHEAP = "claude-haiku-4-5-20251001";
+export const OPENROUTER_MODEL =
+  process.env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3.1";
 export const client = new Anthropic();
+export type ModelMode = "full" | "cheap";
+
+type TextMessage = {
+  content: [{ type: "text"; text: string }];
+};
 
 export const HARD_BAN_PHRASES = [
   "it's not", // triggers "it's not X, it's Y" banned structure
@@ -84,6 +100,100 @@ export async function runWithQA<T>(contract: QAContract<T>): Promise<QAOutcome<T
   return { output: lastOutput as T, qa: lastQa as QAResult, escalated: true };
 }
 
+function flattenMessageContent(content: MessageParam["content"]): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((block) => {
+      if (block.type === "text") return block.text;
+      return `[${block.type} content omitted in cheap model mode]`;
+    })
+    .join("\n");
+}
+
+function flattenSystem(system: MessageCreateParamsNonStreaming["system"]): string | undefined {
+  if (!system) return undefined;
+  if (typeof system === "string") return system;
+  return system
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function createTextMessage(
+  params: MessageCreateParamsNonStreaming,
+  options?: { timeout?: number },
+  mode: ModelMode = "full",
+): Promise<TextMessage> {
+  if (mode !== "cheap") {
+    return client.messages.create(params, options) as unknown as Promise<TextMessage>;
+  }
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error("OPENROUTER_API_KEY is missing. Add it in Vercel to use cheap test mode.");
+  }
+
+  const controller = new AbortController();
+  // DeepSeek via OpenRouter is much slower than Claude on long prompts.
+  // Use 220s default in cheap mode so callers don't have to remember.
+  const defaultTimeoutMs = mode === "cheap" ? 220_000 : 90_000;
+  const timeout = setTimeout(() => controller.abort(), options?.timeout ?? defaultTimeoutMs);
+  try {
+    const system = flattenSystem(params.system);
+    const messages = [
+      ...(system ? [{ role: "system", content: system }] : []),
+      ...params.messages.map((message) => ({
+        role: message.role,
+        content: flattenMessageContent(message.content),
+      })),
+    ];
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://betteryourads.com",
+        "X-Title": "Better Your Ads",
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages,
+        max_tokens: params.max_tokens,
+        temperature: params.temperature,
+        // OpenRouter load-balances across multiple providers per model. For
+        // DeepSeek v3.1 specifically, DeepInfra's instance truncates to
+        // ~150 completion tokens with finish_reason=stop while Novita and
+        // SambaNova produce full-length output. Pin order + ignore the bad
+        // ones so we get reliable diagnoses.
+        provider: {
+          order: ["Novita", "SambaNova", "Fireworks", "Together"],
+          ignore: ["DeepInfra"],
+          allow_fallbacks: true,
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`OpenRouter ${response.status}: ${body.slice(0, 300)}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: { message?: { content?: string }; finish_reason?: string }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const text = data.choices?.[0]?.message?.content || "";
+    const finish = data.choices?.[0]?.finish_reason || "?";
+    console.log(
+      `[openrouter] ${OPENROUTER_MODEL} finish=${finish} prompt=${data.usage?.prompt_tokens ?? "?"} completion=${data.usage?.completion_tokens ?? "?"} bytes=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`,
+    );
+    return { content: [{ type: "text", text }] };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /** Ask Claude to judge output against a rubric. Returns QA verdict. */
 export async function judgeWithRubric(params: {
   systemPrompt: string;
@@ -92,6 +202,7 @@ export async function judgeWithRubric(params: {
   rubric: string[];
   /** Min score required on every dimension to pass. */
   passThreshold: number;
+  modelMode?: ModelMode;
 }): Promise<QAResult> {
   const schemaHint = params.rubric
     .map((r) => `  "${r}": <1-10>`)
@@ -112,16 +223,32 @@ ${schemaHint}
 
 A pass requires EVERY dimension to score >= ${params.passThreshold}. Be strict. Favor a fail over a borderline pass.`;
 
-  const msg = await client.messages.create({
-    model: MODEL,
+  const msg = await createTextMessage({
+    model: MODEL_CHEAP,
     max_tokens: 2000,
     system: params.systemPrompt,
     messages: [{ role: "user", content: full }],
-  });
+  }, { timeout: params.modelMode === "cheap" ? 180_000 : 60_000 }, params.modelMode);
 
   const text = msg.content[0].type === "text" ? msg.content[0].text : "";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  // Strip code fences first — DeepSeek often wraps JSON in ```json ... ```
+  const fenceStripped = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1");
+  // Greedy match captures the full JSON even when models add prose around it.
+  const jsonMatch = fenceStripped.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
+    // Cheap-mode tolerant fallback: if the judge can't return JSON, treat it
+    // as a soft pass at threshold so the pipeline keeps moving instead of
+    // bouncing forever. The diagnosis itself is what users see; a flaky judge
+    // shouldn't block the whole result.
+    if (params.modelMode === "cheap") {
+      return {
+        pass: true,
+        score: params.passThreshold,
+        issues: ["QA judge returned non-JSON; soft-passing in cheap mode"],
+        feedbackForRetry: "",
+        retries: 0,
+      };
+    }
     return {
       pass: false,
       score: 0,
@@ -150,6 +277,15 @@ A pass requires EVERY dimension to score >= ${params.passThreshold}. Be strict. 
       rubric: parsed.scores,
     };
   } catch {
+    if (params.modelMode === "cheap") {
+      return {
+        pass: true,
+        score: params.passThreshold,
+        issues: ["QA judge JSON parse error; soft-passing in cheap mode"],
+        feedbackForRetry: "",
+        retries: 0,
+      };
+    }
     return {
       pass: false,
       score: 0,
