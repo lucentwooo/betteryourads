@@ -424,28 +424,29 @@ async function findOfficialPageViaTypeahead(
   searchTerm: string,
   country: string,
   log: (msg: string) => void,
-): Promise<{ pageName: string } | null> {
+): Promise<{ pageName: string } | "no-input" | null> {
   const home = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}`;
   log(`typeahead GOTO ${country} for "${searchTerm}"`);
   try {
-    await page.goto(home, { waitUntil: "domcontentloaded", timeout: 15000 });
+    await page.goto(home, { waitUntil: "domcontentloaded", timeout: 12000 });
   } catch (e) {
     log(`typeahead goto failed: ${e instanceof Error ? e.message : e}`);
-    return null;
+    return "no-input";
   }
 
   // Find the search input. Meta uses a few placeholder variants depending
   // on locale ("Search by keyword or advertiser", "Search ads", etc.) so
-  // we try multiple selectors.
+  // we try multiple selectors. 5s budget — if it's not in the DOM by then,
+  // the UI is not the shape we expect and retrying won't help.
   const inputHandle = await page
     .waitForSelector(
       'input[type="search"], input[placeholder*="keyword" i], input[placeholder*="advertiser" i], input[aria-label*="search" i]',
-      { timeout: 10000 },
+      { timeout: 5000 },
     )
     .catch(() => null);
   if (!inputHandle) {
     log(`typeahead no search input found`);
-    return null;
+    return "no-input";
   }
 
   try {
@@ -823,17 +824,35 @@ async function captureFromKeywordSearch(
       }
     }
 
-    // Score each card's username against the target. Track best-scoring
-    // username so we can label results with the brand's actual page name.
+    // Score each card's username against the target. Brand FB usernames
+    // are usually concatenated CamelCase ("OmodaJaecooAustralia") while
+    // search terms have spaces ("Jaecoo Australia"). Strip spaces from
+    // both for a "compact" comparison; that's the dominant signal.
     const usernameCounts: Record<string, number> = {};
     for (const c of cards) usernameCounts[c.username] = (usernameCounts[c.username] || 0) + 1;
+    const targetCompact = target.replace(/\s+/g, "");
+    const targetWords = target.split(/\s+/).filter((w) => w.length >= 2);
     let bestUsername: string | null = null;
     let bestScore = -1;
     for (const [username, count] of Object.entries(usernameCounts)) {
       const nu = norm(username);
+      const nuCompact = nu.replace(/\s+/g, "");
       let score = 0;
       if (nu === target) score = 100;
-      else if (nu.startsWith(target) || target.startsWith(nu)) score = 50;
+      else if (nuCompact === targetCompact) score = 95;
+      else if (nu.startsWith(target) || target.startsWith(nu)) score = 60;
+      // OmodaJaecooAustralia contains JaecooAustralia → strong signal that
+      // this is a regional/sub-brand of the searched brand.
+      else if (nuCompact.includes(targetCompact) && targetCompact.length >= 5) score = 50;
+      else if (targetCompact.includes(nuCompact) && nuCompact.length >= 5) score = 35;
+      // Every meaningful word of the target appears somewhere in the
+      // (concatenated) username. Catches "Toyota Australia" → ToyotaAU,
+      // "Better Help" → BetterHelp, etc.
+      else if (
+        targetWords.length >= 2 &&
+        targetWords.every((w) => nuCompact.includes(w))
+      )
+        score = 30;
       else if (
         new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(nu) ||
         new RegExp(`\\b${nu.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(target)
@@ -1160,9 +1179,23 @@ async function scrapeMetaAdLibraryInner(
     // name into the Ad Library search box, click the suggested OFFICIAL page,
     // and read ads from that brand's specific URL. Gives us Meta's true
     // active ad count plus only that brand's ads (no keyword noise).
-    for (const term of searchTerms) {
+    //
+    // Bail fast if the FIRST attempt can't even find the search input —
+    // that means Meta's UI shape doesn't match our selectors and retrying
+    // across (term × country) just burns 10s per attempt for nothing.
+    let typeaheadAvailable = true;
+    outerTypeahead: for (const term of searchTerms) {
+      if (!typeaheadAvailable) break;
       for (const country of countryOrder) {
+        if (!typeaheadAvailable) break outerTypeahead;
         const found = await findOfficialPageViaTypeahead(page, term, country, log);
+        if (found === "no-input") {
+          // Meta isn't rendering the search box for our headless session.
+          // Skip remaining typeahead attempts.
+          typeaheadAvailable = false;
+          break outerTypeahead;
+        }
+        if (!found) continue;
         if (found) {
           const captured = await captureAdsAtCurrentUrl(page, outputDir, prefix, log);
           if (captured.brandCount > 0 || captured.ads.length > 0) {

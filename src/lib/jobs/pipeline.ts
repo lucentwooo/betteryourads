@@ -337,7 +337,11 @@ async function stageOneCompetitor(jobId: string): Promise<boolean> {
     scrapeMetaAdLibrary(
       competitorName,
       adsDir,
-      competitorName.toLowerCase().replace(/\s+/g, "-")
+      competitorName.toLowerCase().replace(/\s+/g, "-"),
+      // Pass the analyzed brand's URL so competitor searches inherit the
+      // country context. Without this an Australian brand's competitors
+      // get searched in country=ALL/US and we miss their regional ads.
+      job.input.companyUrl,
     ),
     META_SCRAPE_TIMEOUT_MS,
     `scrapeMetaAdLibrary(${competitorName})`
