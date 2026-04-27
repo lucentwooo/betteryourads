@@ -1397,15 +1397,62 @@ async function readBrandCountForPageId(
         { timeout: 10000 },
       )
       .catch(() => {});
-    const count = await page.evaluate(() => {
+    // Dismiss cookie banner if present — Meta's consent dialog blocks
+    // ad content from rendering on EU-routed responses.
+    await dismissCookieBanner(page).catch(() => {});
+    await delay(1500);
+    const probe = await page.evaluate(() => {
       const t = document.body.innerText || "";
-      const m = t.match(/~?([\d,]+)\s+results?/i);
-      return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+      // Try multiple count formats: "~1,500 results", "About 1500 ads",
+      // "Showing 1500 ads", "1.5K results".
+      const patterns = [
+        /~?([\d,]+)\s+results?/i,
+        /About\s+([\d,]+)\s+ad/i,
+        /Showing\s+([\d,]+)\s+ad/i,
+        /([\d.]+)([KkMm])\s+(?:results|ads)/,
+        /([\d,]+)\s+ads?\s+(?:active|match)/i,
+      ];
+      let count = 0;
+      for (const p of patterns) {
+        const m = t.match(p);
+        if (m) {
+          const n = parseFloat(m[1].replace(/,/g, ""));
+          const suf = m[2] ? m[2].toLowerCase() : "";
+          count = suf === "k" ? Math.round(n * 1000) : suf === "m" ? Math.round(n * 1_000_000) : Math.round(n);
+          break;
+        }
+      }
+      return {
+        count,
+        bodyPreview: t.replace(/\s+/g, " ").trim().slice(0, 250),
+      };
     });
-    log(`brand-count country=${c} read=${count}`);
-    if (count > 0) return count;
+    log(`brand-count country=${c} read=${probe.count}`);
+    if (probe.count > 0) return probe.count;
+    log(`brand-count country=${c} body="${probe.bodyPreview}"`);
   }
   return 0;
+}
+
+/**
+ * Dismiss cookie / consent banners that block content rendering. Meta
+ * shows a "Allow all cookies" or "Decline optional cookies" overlay on
+ * EU-routed responses.
+ */
+async function dismissCookieBanner(page: import("puppeteer-core").Page): Promise<boolean> {
+  return await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+    for (const btn of buttons) {
+      const text = (btn as HTMLElement).innerText?.toLowerCase().trim() || "";
+      if (
+        /^(allow all|allow all cookies|accept all|accept all cookies|decline optional cookies|only allow essential cookies)$/i.test(text)
+      ) {
+        (btn as HTMLElement).click();
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
 /**
@@ -1460,13 +1507,31 @@ async function captureAdsForPage(
         { timeout: 10000 },
       )
       .catch(() => {});
-    await delay(1000);
+    await dismissCookieBanner(page).catch(() => {});
+    await delay(1500);
     const probe = await page.evaluate(() => {
       const t = document.body.innerText || "";
-      const m = t.match(/~?([\d,]+)\s+results?/i);
+      const patterns = [
+        /~?([\d,]+)\s+results?/i,
+        /About\s+([\d,]+)\s+ad/i,
+        /Showing\s+([\d,]+)\s+ad/i,
+        /([\d.]+)([KkMm])\s+(?:results|ads)/,
+        /([\d,]+)\s+ads?\s+(?:active|match)/i,
+      ];
+      let count = 0;
+      for (const p of patterns) {
+        const m = t.match(p);
+        if (m) {
+          const n = parseFloat(m[1].replace(/,/g, ""));
+          const suf = m[2] ? m[2].toLowerCase() : "";
+          count = suf === "k" ? Math.round(n * 1000) : suf === "m" ? Math.round(n * 1_000_000) : Math.round(n);
+          break;
+        }
+      }
       return {
-        count: m ? parseInt(m[1].replace(/,/g, ""), 10) : 0,
+        count,
         hasLibraryId: t.includes("Library ID"),
+        bodyPreview: t.replace(/\s+/g, " ").trim().slice(0, 250),
       };
     });
     log(`brand-ads probe country=${c} count=${probe.count} libraryIds=${probe.hasLibraryId ? "yes" : "no"}`);
@@ -1475,6 +1540,7 @@ async function captureAdsForPage(
       landed = true;
       break;
     }
+    log(`brand-ads country=${c} body="${probe.bodyPreview}"`);
   }
   if (!landed) {
     log(`brand-ads all countries returned empty for page_id=${pageId}`);

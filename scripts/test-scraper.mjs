@@ -42,6 +42,8 @@ async function main() {
   let lastSeenSteps = 0;
   let scraperTrace = null;
   let companyAdCount = null;
+  let lastStatus = "";
+  let advancing = false;
   while (Date.now() - t0 < MAX_POLL_MS) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     const r = await fetch(`${baseUrl}/api/jobs/${jobId}`);
@@ -50,6 +52,25 @@ async function main() {
       continue;
     }
     const job = await r.json();
+    if (job.status !== lastStatus) {
+      console.log(`[test] status: ${lastStatus || "(init)"} → ${job.status}`);
+      lastStatus = job.status;
+    }
+    // Pipeline runs one stage per invocation; the browser normally POSTs
+    // /advance after each. Replicate that. Don't double-fire while a
+    // stage is mid-flight (stageRunningSince held) or already advancing.
+    if (
+      !advancing &&
+      !job.stageRunningSince &&
+      job.status !== "complete" &&
+      job.status !== "error" &&
+      job.status !== "awaiting-approval"
+    ) {
+      advancing = true;
+      fetch(`${baseUrl}/api/jobs/${jobId}/advance`, { method: "POST" })
+        .catch(() => {})
+        .finally(() => { advancing = false; });
+    }
     if (Array.isArray(job.progress) && job.progress.length > lastSeenSteps) {
       for (const step of job.progress.slice(lastSeenSteps)) {
         console.log(`[step] ${step.step}: ${fmt(step.detail)}`);
