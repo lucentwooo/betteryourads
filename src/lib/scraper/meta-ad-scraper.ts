@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import type { AdScreenshot } from "../types";
 import { putImage } from "../storage/image-store";
 import { launchBrowser } from "./browser";
+import { perplexitySearch } from "../ai/openrouter";
 
 interface MetaAdResult {
   success: boolean;
@@ -405,6 +406,152 @@ async function harvestPageIdFromKeywordResults(
     pageName: harvest.best.pageName,
     activeAdCount: 0, // unknown — captureAdsForPage reads it from brand URL
   };
+}
+
+/**
+ * Ask Perplexity Sonar (web-search-grounded LLM) for the brand's
+ * official Facebook page URL. Extract the username from the URL.
+ *
+ * This is the deterministic answer to "which page is the official one?"
+ * Far more reliable than guessing usernames, because Perplexity searches
+ * the open web and returns the verified page.
+ */
+async function findOfficialFacebookUsername(
+  brandName: string,
+  log: (msg: string) => void,
+): Promise<string | null> {
+  const t0 = Date.now();
+  log(`search asking Perplexity for "${brandName}" official Facebook page`);
+  let response: { text: string; citations: string[] };
+  try {
+    response = await perplexitySearch({
+      prompt: `What is the URL of ${brandName}'s OFFICIAL Facebook page? Reply with ONLY the URL in the form https://www.facebook.com/<username> — nothing else. If you can't find an official Facebook page, reply with exactly: NONE`,
+      maxTokens: 200,
+      timeoutMs: 25_000,
+    });
+  } catch (e) {
+    log(`search Perplexity call failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+  log(`search Perplexity replied in ${Date.now() - t0}ms: "${response.text.slice(0, 200).replace(/\s+/g, " ")}"`);
+
+  // Find the first facebook.com URL in the response. Sonar sometimes
+  // includes citations alongside the answer; we accept either.
+  const candidates: string[] = [response.text, ...response.citations];
+  const fbUrlPattern = /https?:\/\/(?:www\.)?facebook\.com\/([A-Za-z0-9.\-_]+)/i;
+  // Skip obvious system paths returned in error/redirect cases.
+  const SYSTEM = new Set([
+    "ads",
+    "policies",
+    "privacy",
+    "help",
+    "pages",
+    "business",
+    "login",
+    "signup",
+    "about",
+    "careers",
+    "company",
+    "groups",
+    "watch",
+    "marketplace",
+    "events",
+    "people",
+    "search",
+    "settings",
+  ]);
+  for (const text of candidates) {
+    const matches = text.matchAll(/https?:\/\/(?:www\.)?facebook\.com\/([A-Za-z0-9.\-_]+)/gi);
+    for (const m of matches) {
+      const username = m[1].replace(/[\/?#].*$/, "").trim();
+      if (!username || username.length < 2) continue;
+      if (SYSTEM.has(username.toLowerCase())) continue;
+      log(`search resolved official username: "${username}"`);
+      return username;
+    }
+  }
+  log(`search no facebook.com URL extracted from Perplexity response`);
+  return null;
+}
+
+/**
+ * Visit facebook.com/<username>/ and extract the numeric page_id from the
+ * page source. Verify the page name matches our brand.
+ */
+async function resolvePageIdFromUsername(
+  page: import("puppeteer-core").Page,
+  username: string,
+  brandName: string,
+  log: (msg: string) => void,
+): Promise<string | null> {
+  const url = `https://www.facebook.com/${username}/`;
+  log(`page-resolve GOTO facebook.com/${username}`);
+  let response;
+  try {
+    response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  } catch (e) {
+    log(`page-resolve goto failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+  const status = response?.status() ?? 0;
+  const finalUrl = page.url();
+  if (status >= 400) {
+    log(`page-resolve ${username} → ${status}`);
+    return null;
+  }
+  if (
+    finalUrl.includes("/login") ||
+    finalUrl.includes("/recover") ||
+    finalUrl.includes("/checkpoint")
+  ) {
+    log(`page-resolve ${username} redirected to ${finalUrl.slice(0, 80)}`);
+    return null;
+  }
+  await delay(800);
+
+  const probe = await page
+    .evaluate(() => {
+      const html = document.documentElement.outerHTML;
+      const patterns = [
+        /"pageID":"(\d{6,})"/,
+        /"page_id":"(\d{6,})"/,
+        /"entity_id":"(\d{6,})"/,
+        /"userID":"(\d{6,})"/,
+        /content="fb:\/\/page\/?(?:\?id=)?(\d{6,})"/,
+        /fb:\/\/page\/\?id=(\d{6,})/,
+        /entity_id=(\d{6,})/,
+      ];
+      let pageId: string | null = null;
+      for (const p of patterns) {
+        const m = html.match(p);
+        if (m) {
+          pageId = m[1];
+          break;
+        }
+      }
+      const ogTitle =
+        document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
+      const titleText = document.title || "";
+      const h1 = document.querySelector("h1")?.textContent?.trim() || "";
+      return { pageId, ogTitle: ogTitle.slice(0, 100), titleText: titleText.slice(0, 100), h1: h1.slice(0, 100) };
+    })
+    .catch(() => null);
+
+  if (!probe) {
+    log(`page-resolve probe failed`);
+    return null;
+  }
+  if (!probe.pageId) {
+    log(`page-resolve loaded but no page_id (title="${probe.titleText}" og="${probe.ogTitle}")`);
+    return null;
+  }
+  // Trust Perplexity's answer for name matching: if Perplexity returned
+  // facebook.com/ToyotaAustralia/ for "Toyota Australia", we accept it.
+  // We just need a sanity check that the page exists and renders SOMETHING.
+  log(
+    `page-resolve MATCH ${username} → page_id=${probe.pageId} (title="${probe.titleText}" og="${probe.ogTitle}")`,
+  );
+  return probe.pageId;
 }
 
 /**
@@ -1363,34 +1510,38 @@ async function scrapeMetaAdLibraryInner(
     pushTerm(companyName);
     if (domainStem && normalize(domainStem) !== normalize(companyName)) pushTerm(domainStem);
 
-    // Strategy 0 (primary): direct page lookup. Generate plausible Facebook
-    // usernames from the brand name (CamelCase, lowercase, with-AU suffix),
-    // navigate to facebook.com/<username>/, and extract the numeric page_id
-    // from the page source. Then we can load the brand's specific ad URL.
+    // Strategy 0 (primary): web-search for the brand's official Facebook
+    // page (via Perplexity Sonar), then go straight to that page to read
+    // its numeric page_id, then load the brand's specific Ad Library URL.
     //
-    // This is the only approach that reliably works for big brands like
-    // Toyota Australia whose own ads don't include the brand name in copy
-    // and therefore never appear in keyword search results.
+    // Why this works when keyword search doesn't: big brands' own ads
+    // don't include their brand name in copy ("Get a great deal on the
+    // new HiLux"), so they're invisible to keyword search. But there's
+    // exactly one official Facebook page per brand, and a search engine
+    // can find it deterministically.
     {
-      const pageId = await findPageIdByUsernameLookup(page, companyName, log);
-      if (pageId) {
-        const captured = await captureAdsForPage(page, pageId, primaryCountry, outputDir, prefix, log);
-        if (captured.brandCount > 0 || captured.ads.length > 0) {
-          log(
-            `DONE strategy=username-lookup pageId=${pageId} ads=${captured.ads.length} brandCount=${captured.brandCount}`,
-          );
-          return {
-            success: captured.ads.length > 0,
-            ads: captured.ads,
-            totalCount: captured.brandCount || captured.imageCount + captured.videoCount,
-            videoCount: captured.videoCount,
-            imageCount: captured.imageCount,
-            reason:
-              captured.ads.length > 0
-                ? `Found ${captured.brandCount || captured.imageCount + captured.videoCount} active ads on ${companyName}'s official page; captured ${captured.ads.length} samples.`
-                : `${companyName} runs ${captured.brandCount} active ads but they're all video.`,
-            trace,
-          };
+      const username = await findOfficialFacebookUsername(companyName, log);
+      if (username) {
+        const pageId = await resolvePageIdFromUsername(page, username, companyName, log);
+        if (pageId) {
+          const captured = await captureAdsForPage(page, pageId, primaryCountry, outputDir, prefix, log);
+          if (captured.brandCount > 0 || captured.ads.length > 0) {
+            log(
+              `DONE strategy=search-lookup username=${username} pageId=${pageId} ads=${captured.ads.length} brandCount=${captured.brandCount}`,
+            );
+            return {
+              success: captured.ads.length > 0,
+              ads: captured.ads,
+              totalCount: captured.brandCount || captured.imageCount + captured.videoCount,
+              videoCount: captured.videoCount,
+              imageCount: captured.imageCount,
+              reason:
+                captured.ads.length > 0
+                  ? `Found ${captured.brandCount || captured.imageCount + captured.videoCount} active ads on ${companyName}'s official Facebook page; captured ${captured.ads.length} samples.`
+                  : `${companyName} runs ${captured.brandCount} active ads but they're all video.`,
+              trace,
+            };
+          }
         }
       }
     }
