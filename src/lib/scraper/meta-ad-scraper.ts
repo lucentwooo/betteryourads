@@ -1353,6 +1353,152 @@ async function captureFromKeywordSearch(
 }
 
 /**
+ * Read brand count from the Ad Library Pages tab. Navigates to
+ * `?q=<term>&search_type=page` and finds the tile whose page_id (or
+ * username) matches. Each tile shows e.g. "1.5K active ads" as plain
+ * text — far more reliable than view_all_page_id URLs which Meta
+ * silently refuses to render from Vercel IPs (only page chrome shows).
+ */
+async function readBrandCountFromPagesTab(
+  page: import("puppeteer-core").Page,
+  searchTerm: string,
+  matchUsername: string | null,
+  matchPageId: string | null,
+  country: string,
+  log: (msg: string) => void,
+): Promise<number> {
+  const countriesToTry: string[] = [];
+  const pushC = (c: string) => {
+    if (!countriesToTry.includes(c)) countriesToTry.push(c);
+  };
+  if (country === "ALL") { pushC("US"); pushC("GB"); }
+  else { pushC(country); pushC("US"); }
+  pushC("ALL");
+
+  for (const c of countriesToTry) {
+    const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${c}&q=${encodeURIComponent(searchTerm)}&search_type=page`;
+    log(`pages-tab GOTO country=${c} q="${searchTerm}"`);
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+    } catch (e) {
+      log(`pages-tab goto failed (country=${c}): ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    // Wait until tiles render (each tile has "active ads" text) OR the
+    // empty-state appears.
+    await page
+      .waitForFunction(
+        () => {
+          const t = document.body.innerText || "";
+          return /\d[\d,.]*\s*[KkMm]?\s+(?:active\s+)?ads?\b/i.test(t) ||
+            /no pages match/i.test(t) || /no results/i.test(t);
+        },
+        { timeout: 12000 },
+      )
+      .catch(() => {});
+    await dismissCookieBanner(page).catch(() => {});
+    await delay(1500);
+
+    const probe = await page.evaluate((args: { wantUsername: string | null; wantPageId: string | null; rawTerm: string }) => {
+      const { wantUsername, wantPageId, rawTerm } = args;
+      const norm = (s: string) =>
+        s.toLowerCase().replace(/\.(ai|io|com|co|app|so|dev|net|org)\b/g, "")
+          .replace(/\b(inc|llc|ltd|corp|company|group)\b/g, "")
+          .replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+      const target = norm(rawTerm);
+      const tiles: { username: string | null; pageId: string | null; text: string; count: number }[] = [];
+
+      // Each tile has an anchor with view_all_page_id=NNN OR a
+      // facebook.com/<username>/ link. Scan for both.
+      const anchors = Array.from(document.querySelectorAll("a[href]"));
+      const seen = new Set<Element>();
+      for (const a of anchors) {
+        const href = (a as HTMLAnchorElement).href || "";
+        const pidMatch = href.match(/view_all_page_id=(\d{6,})/);
+        const usernameMatch = (() => {
+          try {
+            const u = new URL(href);
+            if (!u.hostname.endsWith("facebook.com")) return null;
+            const parts = u.pathname.split("/").filter(Boolean);
+            if (parts.length === 0) return null;
+            const first = parts[0];
+            if (!first || first.length < 2) return null;
+            if (["ads", "policies", "privacy", "help", "pages", "business",
+                 "login", "signup", "about"].includes(first.toLowerCase())) return null;
+            return first;
+          } catch { return null; }
+        })();
+        if (!pidMatch && !usernameMatch) continue;
+
+        // Find the tile container around this anchor.
+        let el: Element | null = a;
+        let bestContainer: HTMLElement | null = null;
+        while (el && el.parentElement) {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          if (r.width > 200 && r.width < 900 && r.height > 60 && r.height < 700) {
+            bestContainer = el as HTMLElement;
+          }
+          el = el.parentElement;
+        }
+        const container = bestContainer ?? (a.parentElement as HTMLElement | null);
+        if (!container || seen.has(container)) continue;
+        seen.add(container);
+        const text = (container.innerText || "").trim();
+        if (!text || text.length > 1500) continue;
+
+        const countMatch = text.match(/(\d[\d,.]*)\s*([KkMm]?)\s+(?:active\s+)?ads?\b/i);
+        let count = 0;
+        if (countMatch) {
+          const n = parseFloat(countMatch[1].replace(/,/g, ""));
+          const suf = countMatch[2].toLowerCase();
+          count = suf === "k" ? Math.round(n * 1000)
+            : suf === "m" ? Math.round(n * 1_000_000)
+            : Math.round(n);
+        }
+        tiles.push({
+          username: usernameMatch,
+          pageId: pidMatch ? pidMatch[1] : null,
+          text: text.slice(0, 200),
+          count,
+        });
+      }
+
+      // Score tiles: pageId match > exact username match > target-name match.
+      let best: { username: string | null; pageId: string | null; text: string; count: number } | null = null;
+      let bestScore = -1;
+      for (const t of tiles) {
+        let score = -1;
+        if (wantPageId && t.pageId === wantPageId) score = 100;
+        else if (wantUsername && t.username && t.username.toLowerCase() === wantUsername.toLowerCase()) score = 90;
+        else {
+          // Fall back to fuzzy name match against tile text first line
+          const firstLine = (t.text.split("\n")[0] || "").trim();
+          const np = norm(firstLine);
+          if (np === target) score = 50;
+          else if (np.includes(target) || target.includes(np)) score = 30;
+        }
+        if (score > bestScore) { bestScore = score; best = t; }
+      }
+      return {
+        tilesFound: tiles.length,
+        best,
+        bestScore,
+        bodyPreview: (document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200),
+      };
+    }, { wantUsername: matchUsername, wantPageId: matchPageId, rawTerm: searchTerm });
+
+    log(`pages-tab country=${c} tiles=${probe.tilesFound} bestScore=${probe.bestScore} bestCount=${probe.best?.count ?? 0} bestUsername=${probe.best?.username ?? "n/a"}`);
+    if (probe.tilesFound === 0) {
+      log(`pages-tab country=${c} body="${probe.bodyPreview}"`);
+    }
+    if (probe.best && probe.best.count > 0) {
+      return probe.best.count;
+    }
+  }
+  return 0;
+}
+
+/**
  * Lightweight count fetch — navigates to the brand's view_all_page_id URL
  * and reads the "~XX results" header. Skips screenshotting entirely. Used
  * when keyword-username-match already captured screenshots but we want
@@ -1812,6 +1958,17 @@ async function scrapeMetaAdLibraryInner(
           if (resolvedPageId) {
             trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
           }
+          // Pages-tab fallback when view_all_page_id renders empty.
+          if (trueCount === 0 && captured.pageName) {
+            trueCount = await readBrandCountFromPagesTab(
+              page,
+              captured.pageName,
+              captured.pageName,
+              resolvedPageId,
+              country,
+              log,
+            );
+          }
           const totalCount = trueCount > 0 ? trueCount : captured.matchedCards;
           log(
             `DONE strategy=confirmed-username ads=${captured.ads.length} matched=${captured.matchedCards} totalCount=${totalCount} username=${confirmedUsername}`,
@@ -1847,6 +2004,17 @@ async function scrapeMetaAdLibraryInner(
           }
           if (resolvedPageId) {
             trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
+          }
+          // Pages-tab fallback when view_all_page_id renders empty.
+          if (trueCount === 0 && captured.pageName) {
+            trueCount = await readBrandCountFromPagesTab(
+              page,
+              captured.pageName,
+              captured.pageName,
+              resolvedPageId,
+              country,
+              log,
+            );
           }
           const totalCount = trueCount > 0 ? trueCount : captured2.matchedCards;
           log(
@@ -1937,6 +2105,16 @@ async function scrapeMetaAdLibraryInner(
           }
           if (resolvedPageId) {
             trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
+          }
+          if (trueCount === 0 && captured.pageName) {
+            trueCount = await readBrandCountFromPagesTab(
+              page,
+              captured.pageName,
+              captured.pageName,
+              resolvedPageId,
+              country,
+              log,
+            );
           }
           const totalCount = trueCount > 0 ? trueCount : captured.matchedCards;
           log(
