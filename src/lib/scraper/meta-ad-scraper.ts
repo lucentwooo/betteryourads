@@ -1086,12 +1086,23 @@ async function captureFromKeywordSearch(
     .catch(() => {});
   await delay(800);
 
+  // Scroll deeply — Meta's view_all_page_id endpoint doesn't render
+  // for Vercel IPs and search_type=page is deprecated, so the only way
+  // to find more brand-matched cards is to mine the keyword feed. With
+  // a 28-card first page where ~6 match a target username, scrolling
+  // 25× gets us 150-300 cards on common big-brand searches.
   let lastHeight = 0;
-  for (let i = 0; i < 8; i++) {
-    await page.evaluate(() => window.scrollBy(0, 1500));
-    await delay(700);
+  let stalledCount = 0;
+  for (let i = 0; i < 25; i++) {
+    await page.evaluate(() => window.scrollBy(0, 2000));
+    await delay(800);
     const newHeight = await page.evaluate(() => document.body.scrollHeight);
-    if (newHeight === lastHeight && i > 2) break;
+    if (newHeight === lastHeight) {
+      stalledCount++;
+      if (stalledCount >= 3) break; // 3 consecutive no-grow scrolls = end of feed
+    } else {
+      stalledCount = 0;
+    }
     lastHeight = newHeight;
   }
 
