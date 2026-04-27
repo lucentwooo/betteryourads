@@ -408,6 +408,178 @@ async function harvestPageIdFromKeywordResults(
 }
 
 /**
+ * Strategy 0: direct Facebook page lookup.
+ *
+ * Generate plausible username candidates from the brand name, navigate to
+ * each `facebook.com/<candidate>/` URL, and extract the numeric page_id
+ * from the page source. Returns the first valid page_id found.
+ *
+ * This is more reliable than keyword search for brands whose own ads don't
+ * include the brand name in copy (most big brands — Toyota, Stripe, etc.)
+ */
+async function findPageIdByUsernameLookup(
+  page: import("puppeteer-core").Page,
+  searchTerm: string,
+  log: (msg: string) => void,
+): Promise<string | null> {
+  const candidates = generateUsernameCandidates(searchTerm);
+  log(`username-lookup trying ${candidates.length} candidates: ${candidates.slice(0, 6).join(", ")}`);
+
+  for (const candidate of candidates) {
+    const url = `https://www.facebook.com/${candidate}/`;
+    let response;
+    try {
+      response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12000 });
+    } catch (e) {
+      log(`username-lookup ${candidate} goto failed: ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    const status = response?.status() ?? 0;
+    const finalUrl = page.url();
+    // FB redirects unknown usernames to a search page or 404.
+    if (status >= 400) {
+      log(`username-lookup ${candidate} → ${status}`);
+      continue;
+    }
+    if (
+      finalUrl.includes("/login") ||
+      finalUrl.includes("/recover") ||
+      finalUrl.includes("404") ||
+      finalUrl.includes("error")
+    ) {
+      log(`username-lookup ${candidate} redirected to ${finalUrl.slice(0, 80)}`);
+      continue;
+    }
+
+    await delay(800);
+
+    // Mine page_id and verify the page name matches our search term. FB
+    // embeds page_id in many places — try several patterns.
+    const probe = await page
+      .evaluate((rawTerm: string) => {
+        const html = document.documentElement.outerHTML;
+        const patterns = [
+          /"pageID":"(\d{6,})"/,
+          /"page_id":"(\d{6,})"/,
+          /"entity_id":"(\d{6,})"/,
+          /"userID":"(\d{6,})"/,
+          /content="fb:\/\/page\/?(?:\?id=)?(\d{6,})"/,
+          /fb:\/\/page\/\?id=(\d{6,})/,
+          /entity_id=(\d{6,})/,
+        ];
+        let pageId: string | null = null;
+        for (const p of patterns) {
+          const m = html.match(p);
+          if (m) {
+            pageId = m[1];
+            break;
+          }
+        }
+        // Read page name candidates: <title>, <meta property="og:title">, h1.
+        const ogTitle =
+          document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
+        const titleText = document.title || "";
+        const h1 = document.querySelector("h1")?.textContent?.trim() || "";
+        const norm = (s: string) =>
+          s
+            .toLowerCase()
+            .replace(/[^\w\s]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        const target = norm(rawTerm);
+        const candidateNames = [ogTitle, titleText, h1].filter(Boolean);
+        let nameMatch = false;
+        let bestName = "";
+        const targetCompact = target.replace(/\s+/g, "");
+        for (const n of candidateNames) {
+          const nn = norm(n);
+          const nc = nn.replace(/\s+/g, "");
+          if (nn === target || nc === targetCompact || nc.includes(targetCompact)) {
+            nameMatch = true;
+            bestName = n;
+            break;
+          }
+        }
+        return {
+          pageId,
+          nameMatch,
+          bestName,
+          titleText,
+          ogTitle: ogTitle.slice(0, 80),
+        };
+      }, searchTerm)
+      .catch(() => null);
+
+    if (!probe) {
+      log(`username-lookup ${candidate} probe failed`);
+      continue;
+    }
+    if (!probe.pageId) {
+      log(
+        `username-lookup ${candidate} loaded but no page_id (title="${probe.titleText.slice(0, 50)}")`,
+      );
+      continue;
+    }
+    if (!probe.nameMatch) {
+      log(
+        `username-lookup ${candidate} pageId=${probe.pageId} but name mismatch (og:"${probe.ogTitle}" title="${probe.titleText.slice(0, 50)}")`,
+      );
+      continue;
+    }
+    log(`username-lookup MATCH ${candidate} → page_id=${probe.pageId} name="${probe.bestName}"`);
+    return probe.pageId;
+  }
+
+  log(`username-lookup exhausted all candidates`);
+  return null;
+}
+
+/**
+ * Brand-name-to-Facebook-username heuristics. Most brand pages use one of:
+ *   - CamelCase concatenation: "Toyota Australia" → "ToyotaAustralia"
+ *   - All lowercase concat: "toyotaaustralia"
+ *   - Dotted lowercase: "toyota.australia"
+ *   - Just first word: "Toyota" / "Stripe" / "Notion"
+ *   - With "Official"/"HQ" suffix: "StripeHQ", "NotionOfficial"
+ *
+ * We try a deduped list, ordered by likelihood. FB usernames are
+ * case-insensitive on lookup, but profiles may serve different content
+ * for different cases — so we also try lowercase explicitly.
+ */
+function generateUsernameCandidates(searchTerm: string): string[] {
+  const trimmed = searchTerm.trim();
+  if (!trimmed) return [];
+  // Split by whitespace and any non-alphanumeric character.
+  const words = trimmed.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const camel = words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join("");
+  const lower = camel.toLowerCase();
+  const dotted = words.map((w) => w.toLowerCase()).join(".");
+  const first = words[0];
+  const candidates: string[] = [];
+  const push = (s: string) => {
+    const t = s.trim();
+    if (t && t.length >= 2 && !candidates.includes(t)) candidates.push(t);
+  };
+  push(camel);
+  push(lower);
+  push(dotted);
+  if (words.length > 1) {
+    push(first);
+    push(first.toLowerCase());
+    push(first + "Official");
+    push(first + "HQ");
+    push(first + "AU");
+    push(first + "USA");
+  } else {
+    push(first + "Official");
+    push(first + "HQ");
+  }
+  // Cap at 6 — each candidate costs a page.goto (~3-12s).
+  return candidates.slice(0, 6);
+}
+
+/**
  * Strategy 1: replicate the user's manual flow.
  *
  * 1. Open the Ad Library landing page
@@ -1190,6 +1362,38 @@ async function scrapeMetaAdLibraryInner(
     };
     pushTerm(companyName);
     if (domainStem && normalize(domainStem) !== normalize(companyName)) pushTerm(domainStem);
+
+    // Strategy 0 (primary): direct page lookup. Generate plausible Facebook
+    // usernames from the brand name (CamelCase, lowercase, with-AU suffix),
+    // navigate to facebook.com/<username>/, and extract the numeric page_id
+    // from the page source. Then we can load the brand's specific ad URL.
+    //
+    // This is the only approach that reliably works for big brands like
+    // Toyota Australia whose own ads don't include the brand name in copy
+    // and therefore never appear in keyword search results.
+    {
+      const pageId = await findPageIdByUsernameLookup(page, companyName, log);
+      if (pageId) {
+        const captured = await captureAdsForPage(page, pageId, primaryCountry, outputDir, prefix, log);
+        if (captured.brandCount > 0 || captured.ads.length > 0) {
+          log(
+            `DONE strategy=username-lookup pageId=${pageId} ads=${captured.ads.length} brandCount=${captured.brandCount}`,
+          );
+          return {
+            success: captured.ads.length > 0,
+            ads: captured.ads,
+            totalCount: captured.brandCount || captured.imageCount + captured.videoCount,
+            videoCount: captured.videoCount,
+            imageCount: captured.imageCount,
+            reason:
+              captured.ads.length > 0
+                ? `Found ${captured.brandCount || captured.imageCount + captured.videoCount} active ads on ${companyName}'s official page; captured ${captured.ads.length} samples.`
+                : `${companyName} runs ${captured.brandCount} active ads but they're all video.`,
+            trace,
+          };
+        }
+      }
+    }
 
     // Strategy 1 (preferred): mimic the user's manual flow — type the brand
     // name into the Ad Library search box, click the suggested OFFICIAL page,

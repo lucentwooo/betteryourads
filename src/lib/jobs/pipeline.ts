@@ -166,9 +166,12 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
   // browsers, we fall back to fast HTML extraction and keep the pipeline
   // moving instead of leaving users stuck on "Scanning site".
   let screenshotError: string | null = null;
+  const screenshotTrace: string[] = [];
   const [screenshotRes, pageRes] = await Promise.all([
     withTimeout(
-      scrapeWebsite(job.input.companyUrl, jobDir),
+      scrapeWebsite(job.input.companyUrl, jobDir, undefined, (s) => {
+        screenshotTrace.push(`[${new Date().toISOString().slice(11, 19)}] ${s}`);
+      }),
       WEBSITE_SCREENSHOT_TIMEOUT_MS,
       `scrapeWebsite(${job.input.companyUrl})`
     ).catch((err) => {
@@ -182,9 +185,22 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
     }),
   ]);
   if (screenshotError) {
-    // Vercel runtime logs drop output under load, so push the actual
-    // failure reason into the progress log where we can always read it.
-    await addProgress(jobId, "Website screenshot error", screenshotError);
+    // Surface the LAST few step entries — they tell us which line the
+    // page session died on. Vercel runtime logs are unreliable; this is.
+    const lastSteps = screenshotTrace.slice(-8).join(" | ");
+    await addProgress(
+      jobId,
+      "Website screenshot error",
+      `${screenshotError} || trace: ${lastSteps}`,
+    );
+  } else if (screenshotRes && screenshotTrace.length > 0) {
+    // Also surface the trace on success — useful when a screenshot lands
+    // but the captured image is the wrong page.
+    await addProgress(
+      jobId,
+      "Website screenshot trace",
+      screenshotTrace.slice(-6).join(" | "),
+    );
   }
 
   const websiteContent =
