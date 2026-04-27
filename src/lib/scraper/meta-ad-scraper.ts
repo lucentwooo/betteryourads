@@ -544,11 +544,41 @@ async function resolvePageIdFromUsername(
           break;
         }
       }
+      // Hunt for active-ad-count in JSON blobs, og tags, page text.
+      const adCountPatterns = [
+        /"active_ads_count":\s*(\d+)/,
+        /"activeAdsCount":\s*(\d+)/,
+        /"num_active_ads":\s*(\d+)/,
+        /"numActiveAds":\s*(\d+)/,
+        /"ad_count":\s*(\d+)/,
+        /"page_active_ads_count":\s*(\d+)/,
+      ];
+      let adCount = 0;
+      for (const p of adCountPatterns) {
+        const m = html.match(p);
+        if (m) {
+          adCount = parseInt(m[1], 10);
+          break;
+        }
+      }
+      // Plain text fallback — the Page Transparency section sometimes
+      // renders "Page Transparency · X active ads".
+      if (!adCount) {
+        const text = document.body.innerText || "";
+        const tm = text.match(/(\d[\d,]*)\s*active\s+ads?/i);
+        if (tm) adCount = parseInt(tm[1].replace(/,/g, ""), 10);
+      }
       const ogTitle =
         document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
       const titleText = document.title || "";
       const h1 = document.querySelector("h1")?.textContent?.trim() || "";
-      return { pageId, ogTitle: ogTitle.slice(0, 100), titleText: titleText.slice(0, 100), h1: h1.slice(0, 100) };
+      return {
+        pageId,
+        adCount,
+        ogTitle: ogTitle.slice(0, 100),
+        titleText: titleText.slice(0, 100),
+        h1: h1.slice(0, 100),
+      };
     })
     .catch(() => null);
 
@@ -560,13 +590,19 @@ async function resolvePageIdFromUsername(
     log(`page-resolve loaded but no page_id (title="${probe.titleText}" og="${probe.ogTitle}")`);
     return null;
   }
-  // Trust Perplexity's answer for name matching: if Perplexity returned
-  // facebook.com/ToyotaAustralia/ for "Toyota Australia", we accept it.
-  // We just need a sanity check that the page exists and renders SOMETHING.
   log(
-    `page-resolve MATCH ${username} → page_id=${probe.pageId} (title="${probe.titleText}" og="${probe.ogTitle}")`,
+    `page-resolve MATCH ${username} → page_id=${probe.pageId} adCount=${probe.adCount} (title="${probe.titleText}" og="${probe.ogTitle}")`,
   );
+  // Stash the ad count on a side channel so callers that need it can
+  // retrieve it via getLastResolvedAdCount(). Avoids changing the
+  // function signature and rippling through 5 call sites.
+  lastResolvedAdCount = probe.adCount;
   return probe.pageId;
+}
+
+let lastResolvedAdCount = 0;
+function getLastResolvedAdCount(): number {
+  return lastResolvedAdCount;
 }
 
 /**
@@ -2064,6 +2100,10 @@ async function scrapeMetaAdLibraryInner(
               log,
             );
           }
+          if (trueCount === 0 && getLastResolvedAdCount() > 0) {
+            trueCount = getLastResolvedAdCount();
+            log(`brand-count using count harvested from FB page: ${trueCount}`);
+          }
           const totalCount = trueCount > 0 ? trueCount : captured2.matchedCards;
           log(
             `DONE strategy=confirmed-username-brand-keyword ads=${captured2.ads.length} matched=${captured2.matchedCards} totalCount=${totalCount}`,
@@ -2155,8 +2195,6 @@ async function scrapeMetaAdLibraryInner(
             trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
           }
           if (trueCount === 0 && captured.pageName) {
-            // Search by brand name (e.g. "Headway"), not username
-            // ("headwaybooks") — the Pages tab indexes display names.
             trueCount = await readBrandCountFromPagesTab(
               page,
               companyName,
@@ -2165,6 +2203,12 @@ async function scrapeMetaAdLibraryInner(
               country,
               log,
             );
+          }
+          // Last-resort: the count we may have harvested off the FB page
+          // itself during page-resolve.
+          if (trueCount === 0 && getLastResolvedAdCount() > 0) {
+            trueCount = getLastResolvedAdCount();
+            log(`brand-count using count harvested from FB page: ${trueCount}`);
           }
           const totalCount = trueCount > 0 ? trueCount : captured.matchedCards;
           log(
