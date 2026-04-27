@@ -407,6 +407,263 @@ async function harvestPageIdFromKeywordResults(
 }
 
 /**
+ * Strategy 1: replicate the user's manual flow.
+ *
+ * 1. Open the Ad Library landing page
+ * 2. Type the brand into the search box
+ * 3. Wait for the typeahead dropdown to populate with brand suggestions
+ * 4. Click the first suggestion whose name matches the search term
+ * 5. The click navigates to the brand's specific ad library URL
+ *    (Meta sets view_all_page_id or equivalent automatically)
+ *
+ * Returns the brand's display name when it lands on a brand-specific page.
+ * Caller should then call captureAdsAtCurrentUrl to grab count + samples.
+ */
+async function findOfficialPageViaTypeahead(
+  page: import("puppeteer-core").Page,
+  searchTerm: string,
+  country: string,
+  log: (msg: string) => void,
+): Promise<{ pageName: string } | null> {
+  const home = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}`;
+  log(`typeahead GOTO ${country} for "${searchTerm}"`);
+  try {
+    await page.goto(home, { waitUntil: "domcontentloaded", timeout: 15000 });
+  } catch (e) {
+    log(`typeahead goto failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+
+  // Find the search input. Meta uses a few placeholder variants depending
+  // on locale ("Search by keyword or advertiser", "Search ads", etc.) so
+  // we try multiple selectors.
+  const inputHandle = await page
+    .waitForSelector(
+      'input[type="search"], input[placeholder*="keyword" i], input[placeholder*="advertiser" i], input[aria-label*="search" i]',
+      { timeout: 10000 },
+    )
+    .catch(() => null);
+  if (!inputHandle) {
+    log(`typeahead no search input found`);
+    return null;
+  }
+
+  try {
+    await inputHandle.click({ clickCount: 3 }).catch(() => {});
+    await delay(200);
+    await inputHandle.type(searchTerm, { delay: 80 });
+  } catch (e) {
+    log(`typeahead type failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+  // Wait for the dropdown's AJAX call to complete and suggestions to render.
+  await delay(2200);
+
+  // Pick a suggestion. Meta's dropdown lists brand pages first (with logos)
+  // then keyword fallbacks. We want the first list item that:
+  //   - has a target.length-similar normalized name
+  //   - is clearly a brand entry (not "search for X")
+  const suggestion = await page.evaluate((rawTerm: string) => {
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^\w\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const target = norm(rawTerm);
+
+    // Meta uses [role="option"] for typeahead items in its newer UI.
+    const optionEls = Array.from(
+      document.querySelectorAll('[role="option"], [role="listitem"], li, ul > div'),
+    );
+    type Cand = { name: string; score: number; rect: DOMRect; el: Element };
+    const cands: Cand[] = [];
+    for (const el of optionEls) {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      // Typeahead rows are short and reasonably wide.
+      if (r.width < 150 || r.width > 700 || r.height < 28 || r.height > 110) continue;
+      const text = (el as HTMLElement).innerText?.trim() || "";
+      if (!text || text.length > 200) continue;
+      // Skip "search for X" rows (those are keyword fallbacks, not brands).
+      if (/^search\s+for\b/i.test(text) || /\bsearch\s+results?\b/i.test(text)) continue;
+
+      const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+      // Brand suggestion typically: line[0] = "Brand Name", lines may
+      // include "Page" / "Verified" labels.
+      const name = lines[0];
+      if (!name || name.length < 2 || name.length > 80) continue;
+      const nn = norm(name);
+      let score = 0;
+      if (nn === target) score = 100;
+      else if (nn.startsWith(target + " ")) score = 60;
+      else if (nn.startsWith(target)) score = 40;
+      else if (nn.includes(target)) score = 15;
+      else continue;
+      // Prefer rows that look "branded": include keywords like "Page", an
+      // image (avatar) inside, or a "Verified" marker.
+      if (/\b(page|verified|advertiser)\b/i.test(text)) score += 5;
+      if (el.querySelector("img")) score += 5;
+      cands.push({ name, score, rect: r, el });
+    }
+    if (cands.length === 0) return null;
+    cands.sort((a, b) => b.score - a.score);
+    const winner = cands[0];
+    if (winner.score < 20) return null;
+    // Click it. We dispatch both pointerdown and click since Meta sometimes
+    // listens on pointer events.
+    (winner.el as HTMLElement).click();
+    return { name: winner.name, score: winner.score, totalCands: cands.length };
+  }, searchTerm);
+
+  if (!suggestion) {
+    log(`typeahead no usable suggestion for "${searchTerm}"`);
+    return null;
+  }
+  log(`typeahead clicked "${suggestion.name}" (score=${suggestion.score}, cands=${suggestion.totalCands})`);
+
+  // Wait for navigation OR for new ad cards to appear in place.
+  await page
+    .waitForFunction(
+      () => {
+        const t = document.body.innerText || "";
+        return /~?[\d,]+\s+results?/i.test(t) || t.includes("Library ID") || /no ads match/i.test(t);
+      },
+      { timeout: 12000 },
+    )
+    .catch(() => {});
+  await delay(1200);
+
+  const landed = page.url();
+  log(`typeahead landed at ${landed.slice(0, 200)}`);
+  return { pageName: suggestion.name };
+}
+
+/**
+ * Read brand count and screenshot up to MAX_CARDS image-first ads from
+ * whatever ad library URL the page is currently on. Used after typeahead
+ * navigates us to a brand-specific page.
+ */
+async function captureAdsAtCurrentUrl(
+  page: import("puppeteer-core").Page,
+  outputDir: string,
+  prefix: string,
+  log: (msg: string) => void,
+): Promise<{ ads: AdScreenshot[]; brandCount: number; videoCount: number; imageCount: number }> {
+  const brandCount = await page.evaluate(() => {
+    const t = document.body.innerText || "";
+    const m = t.match(/~?([\d,]+)\s+results?/i);
+    return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+  });
+  log(`current-url count=${brandCount}`);
+
+  let lastHeight = 0;
+  for (let i = 0; i < 6; i++) {
+    await page.evaluate(() => window.scrollBy(0, 1500));
+    await delay(700);
+    const newHeight = await page.evaluate(() => document.body.scrollHeight);
+    if (newHeight === lastHeight && i > 1) break;
+    lastHeight = newHeight;
+  }
+
+  const cardInfo = await page.evaluate(() => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) =>
+        n.textContent?.includes("Library ID") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    const nodes: Node[] = [];
+    let cur = walker.nextNode();
+    while (cur) {
+      nodes.push(cur);
+      cur = walker.nextNode();
+    }
+    const tagged: Set<Element> = new Set();
+    let total = 0;
+    let videos = 0;
+    let images = 0;
+    for (const node of nodes) {
+      let el: Element | null = node.parentElement;
+      while (el && el.parentElement) {
+        const r = el.getBoundingClientRect();
+        if (r.width >= 250 && r.width <= 700 && r.height >= 200) {
+          if (!tagged.has(el)) {
+            let nested = false;
+            for (const existing of tagged) {
+              if (existing.contains(el) || el.contains(existing)) {
+                nested = true;
+                break;
+              }
+            }
+            if (!nested) {
+              const hasVideo = !!el.querySelector("video");
+              if (hasVideo) videos++;
+              else images++;
+              el.setAttribute("data-betteryourads-card", String(total));
+              el.setAttribute("data-betteryourads-type", hasVideo ? "video" : "image");
+              tagged.add(el);
+              total++;
+            }
+          }
+          break;
+        }
+        el = el.parentElement;
+      }
+    }
+    return { total, videos, images };
+  });
+  log(`current-url tagged ${cardInfo.total} cards (${cardInfo.images} image, ${cardInfo.videos} video)`);
+
+  const MAX_CARDS = 4;
+  const ads: AdScreenshot[] = [];
+  for (const want of ["image", "video"] as const) {
+    for (let i = 0; i < cardInfo.total && ads.length < MAX_CARDS; i++) {
+      const info = await page.evaluate((idx: number) => {
+        const el = document.querySelector(`[data-betteryourads-card="${idx}"]`) as HTMLElement | null;
+        if (!el) return null;
+        return {
+          text: el.innerText?.trim().slice(0, 800) || "",
+          adType: el.getAttribute("data-betteryourads-type") || "image",
+        };
+      }, i);
+      if (!info || !info.text || info.adType !== want) continue;
+      try {
+        const handle = await page.evaluateHandle((idx: number) => {
+          return document.querySelector(`[data-betteryourads-card="${idx}"]`);
+        }, i);
+        const el = handle.asElement();
+        if (!el) {
+          await handle.dispose();
+          continue;
+        }
+        await (el as import("puppeteer-core").ElementHandle<Element>).scrollIntoView();
+        await delay(400);
+        const buf = Buffer.from(
+          await (el as import("puppeteer-core").ElementHandle<Element>).screenshot({ type: "png" }),
+        );
+        await fs.mkdir(outputDir, { recursive: true });
+        const screenshotPath = path.join(outputDir, `${prefix}-ad-${ads.length + 1}.png`);
+        await fs.writeFile(screenshotPath, buf);
+        const segs = outputDir.replace(/\\/g, "/").split("/").filter(Boolean);
+        const jobIdLike = segs[segs.length - 2] || segs[segs.length - 1] || "unknown";
+        const blobKey = `jobs/${jobIdLike}/ads/${prefix}-ad-${ads.length + 1}.png`;
+        const uploadedUrl = await putImage(blobKey, buf, "image/png");
+        ads.push({
+          screenshotPath: uploadedUrl,
+          copyText: info.text,
+          adType: info.adType as "image" | "video",
+          source: "meta-ad-library",
+        });
+        await handle.dispose();
+      } catch (e) {
+        log(`current-url screenshot ${i} failed: ${e instanceof Error ? e.message : e}`);
+      }
+      await delay(200);
+    }
+  }
+  log(`current-url captured ${ads.length} screenshots`);
+  return { ads, brandCount, videoCount: cardInfo.videos, imageCount: cardInfo.images };
+}
+
+/**
  * Run a keyword search, find ad cards whose linked Facebook page username
  * matches our search term, and screenshot them in place.
  *
@@ -899,11 +1156,39 @@ async function scrapeMetaAdLibraryInner(
     pushTerm(companyName);
     if (domainStem && normalize(domainStem) !== normalize(companyName)) pushTerm(domainStem);
 
-    // Try every (term, country) combination via the keyword search +
-    // username-matching approach. Meta no longer puts view_all_page_id
-    // links in cards — they now link to facebook.com/<PageUsername>/.
-    // We walk those links, match the username to our search term, and
-    // screenshot matching cards in place.
+    // Strategy 1 (preferred): mimic the user's manual flow — type the brand
+    // name into the Ad Library search box, click the suggested OFFICIAL page,
+    // and read ads from that brand's specific URL. Gives us Meta's true
+    // active ad count plus only that brand's ads (no keyword noise).
+    for (const term of searchTerms) {
+      for (const country of countryOrder) {
+        const found = await findOfficialPageViaTypeahead(page, term, country, log);
+        if (found) {
+          const captured = await captureAdsAtCurrentUrl(page, outputDir, prefix, log);
+          if (captured.brandCount > 0 || captured.ads.length > 0) {
+            log(
+              `DONE strategy=typeahead pageName="${found.pageName}" ads=${captured.ads.length} brandCount=${captured.brandCount}`,
+            );
+            return {
+              success: captured.ads.length > 0,
+              ads: captured.ads,
+              totalCount: captured.brandCount || captured.imageCount + captured.videoCount,
+              videoCount: captured.videoCount,
+              imageCount: captured.imageCount,
+              reason:
+                captured.ads.length > 0
+                  ? `${found.pageName} runs ${captured.brandCount || captured.imageCount + captured.videoCount} active ads; captured ${captured.ads.length} samples.`
+                  : `${found.pageName} runs ${captured.brandCount} active ads but they're all video (we only screenshot images).`,
+              trace,
+            };
+          }
+        }
+      }
+    }
+
+    // Strategy 2 (fallback): keyword search + match by Facebook page username.
+    // Use this when typeahead fails (rare brand, dropdown selectors changed,
+    // etc.) — we mine usernames out of rendered cards instead.
     for (const term of searchTerms) {
       for (const country of countryOrder) {
         const captured = await captureFromKeywordSearch(
