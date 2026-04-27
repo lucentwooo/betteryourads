@@ -348,6 +348,52 @@ async function harvestPageIdFromKeywordResults(
   }, searchTerm);
 
   log(`harvest unique=${harvest.unique} sample: ${harvest.sample.join(", ")}`);
+  if (harvest.unique === 0) {
+    // Diagnostic: figure out WHY there were no view_all_page_id links.
+    // Either (a) cards never rendered, (b) Meta uses different URL patterns,
+    // (c) we got a login wall masquerading as a results page.
+    const diag = await page.evaluate(() => {
+      const anchors = Array.from(document.querySelectorAll("a[href]"));
+      const hrefs = anchors.map((a) => (a as HTMLAnchorElement).href).filter(Boolean);
+      const sampleHrefs = hrefs.slice(0, 8);
+      const uniqueHrefPatterns = new Set(
+        hrefs.map((h) => {
+          try {
+            const u = new URL(h);
+            return u.pathname.split("/").slice(0, 3).join("/") + (u.search ? "?" + Array.from(new URLSearchParams(u.search).keys()).slice(0, 3).join("&") : "");
+          } catch {
+            return h.slice(0, 50);
+          }
+        }),
+      );
+      const libraryIdCount = (document.body.innerText.match(/Library ID/g) || []).length;
+      const sponsoredCount = (document.body.innerText.match(/Sponsored/g) || []).length;
+      const articles = document.querySelectorAll('[role="article"]').length;
+      const bodyLen = (document.body.innerText || "").length;
+      const hasLogin = /log\s*in|sign\s*in/i.test(document.body.innerText || "");
+      const hasRobot = /robot|automated|verification|captcha|suspicious activity/i.test(
+        document.body.innerText || "",
+      );
+      return {
+        totalAnchors: anchors.length,
+        sampleHrefs,
+        uniqueHrefPatterns: Array.from(uniqueHrefPatterns).slice(0, 10),
+        libraryIdCount,
+        sponsoredCount,
+        articles,
+        bodyLen,
+        hasLogin,
+        hasRobot,
+      };
+    }).catch(() => null);
+    if (diag) {
+      log(
+        `DIAG anchors=${diag.totalAnchors} libraryIds=${diag.libraryIdCount} sponsored=${diag.sponsoredCount} articles=${diag.articles} bodyLen=${diag.bodyLen} login=${diag.hasLogin} robot=${diag.hasRobot}`,
+      );
+      log(`DIAG href patterns: ${diag.uniqueHrefPatterns.join(" || ")}`);
+      log(`DIAG sample hrefs: ${diag.sampleHrefs.slice(0, 4).join(" || ")}`);
+    }
+  }
   if (!harvest.best) {
     log(`harvest no advertiser matched "${searchTerm}"`);
     return null;
