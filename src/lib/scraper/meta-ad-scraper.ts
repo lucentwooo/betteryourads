@@ -1364,30 +1364,48 @@ async function readBrandCountForPageId(
   country: string,
   log: (msg: string) => void,
 ): Promise<number> {
-  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&view_all_page_id=${pageId}&search_type=page`;
-  log(`brand-count GOTO page_id=${pageId} country=${country}`);
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
-  } catch (e) {
-    log(`brand-count goto failed: ${e instanceof Error ? e.message : e}`);
-    return 0;
+  // country=ALL renders an empty shell on view_all_page_id pages.
+  // Default to US for global brands; try a small fallback list.
+  const countriesToTry: string[] = [];
+  const pushC = (c: string) => {
+    if (!countriesToTry.includes(c)) countriesToTry.push(c);
+  };
+  if (country === "ALL") {
+    pushC("US");
+    pushC("GB");
+  } else {
+    pushC(country);
+    pushC("US");
   }
-  await page
-    .waitForFunction(
-      () => {
-        const t = document.body.innerText || "";
-        return /~?[\d,]+\s+results?/i.test(t) || /no ads match/i.test(t);
-      },
-      { timeout: 10000 },
-    )
-    .catch(() => {});
-  const count = await page.evaluate(() => {
-    const t = document.body.innerText || "";
-    const m = t.match(/~?([\d,]+)\s+results?/i);
-    return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
-  });
-  log(`brand-count read=${count}`);
-  return count;
+  pushC("ALL");
+
+  for (const c of countriesToTry) {
+    const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${c}&view_all_page_id=${pageId}&search_type=page`;
+    log(`brand-count GOTO page_id=${pageId} country=${c}`);
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+    } catch (e) {
+      log(`brand-count goto failed (country=${c}): ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    await page
+      .waitForFunction(
+        () => {
+          const t = document.body.innerText || "";
+          return /~?[\d,]+\s+results?/i.test(t) || /no ads match/i.test(t);
+        },
+        { timeout: 10000 },
+      )
+      .catch(() => {});
+    const count = await page.evaluate(() => {
+      const t = document.body.innerText || "";
+      const m = t.match(/~?([\d,]+)\s+results?/i);
+      return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+    });
+    log(`brand-count country=${c} read=${count}`);
+    if (count > 0) return count;
+  }
+  return 0;
 }
 
 /**
@@ -1402,33 +1420,66 @@ async function captureAdsForPage(
   prefix: string,
   log: (msg: string) => void,
 ): Promise<{ ads: AdScreenshot[]; videoCount: number; imageCount: number; brandCount: number }> {
-  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&view_all_page_id=${pageId}&search_type=page`;
-  log(`brand-ads GOTO page_id=${pageId} country=${country}`);
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
-  } catch (e) {
-    log(`brand-ads goto failed: ${e instanceof Error ? e.message : e}`);
+  // Meta's Ad Library view_all_page_id endpoint silently returns NO cards
+  // and NO count when country=ALL — the page renders an empty shell.
+  // (Confirmed on Headway: page_id 100064025915707 with country=ALL gave
+  // count=0, 0 cards tagged, even though the brand runs 1500+ ads.)
+  // Default to US instead of ALL for global brands. We also try a small
+  // fallback list if the first country yields zero, since some brands
+  // only run in a specific market.
+  const countriesToTry: string[] = [];
+  const pushC = (c: string) => {
+    if (!countriesToTry.includes(c)) countriesToTry.push(c);
+  };
+  if (country === "ALL") {
+    pushC("US");
+    pushC("GB");
+  } else {
+    pushC(country);
+    pushC("US");
+  }
+  pushC("ALL"); // last resort
+
+  let brandCount = 0;
+  let landed = false;
+  for (const c of countriesToTry) {
+    const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${c}&view_all_page_id=${pageId}&search_type=page`;
+    log(`brand-ads GOTO page_id=${pageId} country=${c}`);
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+    } catch (e) {
+      log(`brand-ads goto failed (country=${c}): ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    await page
+      .waitForFunction(
+        () => {
+          const t = document.body.innerText || "";
+          return /~?[\d,]+\s+results?/i.test(t) || t.includes("Library ID") || /no ads match/i.test(t);
+        },
+        { timeout: 10000 },
+      )
+      .catch(() => {});
+    await delay(1000);
+    const probe = await page.evaluate(() => {
+      const t = document.body.innerText || "";
+      const m = t.match(/~?([\d,]+)\s+results?/i);
+      return {
+        count: m ? parseInt(m[1].replace(/,/g, ""), 10) : 0,
+        hasLibraryId: t.includes("Library ID"),
+      };
+    });
+    log(`brand-ads probe country=${c} count=${probe.count} libraryIds=${probe.hasLibraryId ? "yes" : "no"}`);
+    if (probe.count > 0 || probe.hasLibraryId) {
+      brandCount = probe.count;
+      landed = true;
+      break;
+    }
+  }
+  if (!landed) {
+    log(`brand-ads all countries returned empty for page_id=${pageId}`);
     return { ads: [], videoCount: 0, imageCount: 0, brandCount: 0 };
   }
-  await page
-    .waitForFunction(
-      () => {
-        const t = document.body.innerText || "";
-        return /~?[\d,]+\s+results?/i.test(t) || t.includes("Library ID") || /no ads match/i.test(t);
-      },
-      { timeout: 12000 },
-    )
-    .catch(() => {});
-  await delay(1000);
-
-  // Read the brand's active ad count straight from the page header.
-  // On view_all_page_id pages this is the TRUE count for that brand only,
-  // not keyword-noise.
-  const brandCount = await page.evaluate(() => {
-    const t = document.body.innerText || "";
-    const m = t.match(/~?([\d,]+)\s+results?/i);
-    return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
-  });
   log(`brand-ads count=${brandCount}`);
 
   // Scroll a few times to load enough cards for screenshotting.
@@ -1685,8 +1736,15 @@ async function scrapeMetaAdLibraryInner(
         );
         if (captured.matchedCards > 0) {
           let trueCount = 0;
-          if (captured.pageId) {
-            trueCount = await readBrandCountForPageId(page, captured.pageId, country, log);
+          // Meta dropped view_all_page_id links from inside ad cards in
+          // late 2025, so card-harvest usually yields nothing. Fall back
+          // to the username → profile page → page_id resolver.
+          let resolvedPageId = captured.pageId ?? null;
+          if (!resolvedPageId && captured.pageName) {
+            resolvedPageId = await resolvePageIdFromUsername(page, captured.pageName, companyName, log);
+          }
+          if (resolvedPageId) {
+            trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
           }
           const totalCount = trueCount > 0 ? trueCount : captured.matchedCards;
           log(
@@ -1717,8 +1775,12 @@ async function scrapeMetaAdLibraryInner(
         );
         if (captured2.matchedCards > 0) {
           let trueCount = 0;
-          if (captured2.pageId) {
-            trueCount = await readBrandCountForPageId(page, captured2.pageId, country, log);
+          let resolvedPageId = captured2.pageId ?? null;
+          if (!resolvedPageId && captured2.pageName) {
+            resolvedPageId = await resolvePageIdFromUsername(page, captured2.pageName, companyName, log);
+          }
+          if (resolvedPageId) {
+            trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
           }
           const totalCount = trueCount > 0 ? trueCount : captured2.matchedCards;
           log(
@@ -1798,12 +1860,17 @@ async function scrapeMetaAdLibraryInner(
           log,
         );
         if (captured.matchedCards > 0) {
-          // If we harvested a numeric page_id from the matched cards, ask
-          // Meta for the brand's authoritative active-ad count. Avoids
-          // reporting "2 ads" when the brand actually runs hundreds.
+          // Card-harvest for view_all_page_id usually fails (Meta dropped
+          // that link from inside cards). Fall back to resolving via the
+          // bestUsername → profile page → embedded pageID. That gives us
+          // Meta's authoritative active-ad count for the brand.
           let trueCount = 0;
-          if (captured.pageId) {
-            trueCount = await readBrandCountForPageId(page, captured.pageId, country, log);
+          let resolvedPageId = captured.pageId ?? null;
+          if (!resolvedPageId && captured.pageName) {
+            resolvedPageId = await resolvePageIdFromUsername(page, captured.pageName, companyName, log);
+          }
+          if (resolvedPageId) {
+            trueCount = await readBrandCountForPageId(page, resolvedPageId, country, log);
           }
           const totalCount = trueCount > 0 ? trueCount : captured.matchedCards;
           log(
