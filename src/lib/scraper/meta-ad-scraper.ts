@@ -1016,6 +1016,7 @@ async function captureFromKeywordSearch(
   videoCount: number;
   imageCount: number;
   pageName?: string;
+  pageId?: string;
 }> {
   const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&q=${encodeURIComponent(
     searchTerm,
@@ -1129,7 +1130,7 @@ async function captureFromKeywordSearch(
       cur = walker.nextNode();
     }
 
-    const cards: { el: Element; username: string }[] = [];
+    const cards: { el: Element; username: string; pageId: string | null }[] = [];
     const seen = new Set<Element>();
     for (const node of nodes) {
       let el: Element | null = node.parentElement;
@@ -1149,16 +1150,22 @@ async function captureFromKeywordSearch(
           // Pull first viable username link inside this card.
           const links = Array.from(el.querySelectorAll("a[href]"));
           let username: string | null = null;
+          let pageId: string | null = null;
           for (const a of links) {
-            const u = extractUsername((a as HTMLAnchorElement).href || "");
-            if (u) {
-              username = u;
-              break;
+            const href = (a as HTMLAnchorElement).href || "";
+            if (!username) {
+              const u = extractUsername(href);
+              if (u) username = u;
             }
+            if (!pageId) {
+              const m = href.match(/view_all_page_id=(\d{6,})/);
+              if (m) pageId = m[1];
+            }
+            if (username && pageId) break;
           }
           if (username) {
             seen.add(el);
-            cards.push({ el, username });
+            cards.push({ el, username, pageId });
           }
           break;
         }
@@ -1227,6 +1234,7 @@ async function captureFromKeywordSearch(
     let imageCount = 0;
     let videoCount = 0;
     let totalMatched = 0;
+    const pageIdVotes: Record<string, number> = {};
     if (bestUsername) {
       for (const c of cards) {
         if (c.username !== bestUsername) continue;
@@ -1236,6 +1244,17 @@ async function captureFromKeywordSearch(
         c.el.setAttribute("data-betteryourads-card", String(totalMatched));
         c.el.setAttribute("data-betteryourads-type", hasVideo ? "video" : "image");
         totalMatched++;
+        if (c.pageId) pageIdVotes[c.pageId] = (pageIdVotes[c.pageId] || 0) + 1;
+      }
+    }
+    // Most-voted pageId among matched cards (deterministic — same brand
+    // username always points to the same numeric page id).
+    let bestPageId: string | null = null;
+    let bestVotes = 0;
+    for (const [pid, votes] of Object.entries(pageIdVotes)) {
+      if (votes > bestVotes) {
+        bestVotes = votes;
+        bestPageId = pid;
       }
     }
 
@@ -1248,6 +1267,7 @@ async function captureFromKeywordSearch(
       cardsScanned: cards.length,
       bestUsername,
       bestScore,
+      bestPageId,
       totalMatched,
       imageCount,
       videoCount,
@@ -1258,7 +1278,7 @@ async function captureFromKeywordSearch(
   log(
     `username-search cards=${cardScan.cardsScanned} matched=${cardScan.totalMatched} best="${
       cardScan.bestUsername ?? "none"
-    }" score=${cardScan.bestScore}`,
+    }" score=${cardScan.bestScore} pageId=${cardScan.bestPageId ?? "n/a"}`,
   );
   if (cardScan.cardsScanned > 0) {
     log(`username-search sample: ${cardScan.sample.join(", ")}`);
@@ -1322,7 +1342,46 @@ async function captureFromKeywordSearch(
     videoCount: cardScan.videoCount,
     imageCount: cardScan.imageCount,
     pageName: cardScan.bestUsername ?? undefined,
+    pageId: cardScan.bestPageId ?? undefined,
   };
+}
+
+/**
+ * Lightweight count fetch — navigates to the brand's view_all_page_id URL
+ * and reads the "~XX results" header. Skips screenshotting entirely. Used
+ * when keyword-username-match already captured screenshots but we want
+ * Meta's authoritative active-ad count for the brand.
+ */
+async function readBrandCountForPageId(
+  page: import("puppeteer-core").Page,
+  pageId: string,
+  country: string,
+  log: (msg: string) => void,
+): Promise<number> {
+  const url = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&view_all_page_id=${pageId}&search_type=page`;
+  log(`brand-count GOTO page_id=${pageId} country=${country}`);
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  } catch (e) {
+    log(`brand-count goto failed: ${e instanceof Error ? e.message : e}`);
+    return 0;
+  }
+  await page
+    .waitForFunction(
+      () => {
+        const t = document.body.innerText || "";
+        return /~?[\d,]+\s+results?/i.test(t) || /no ads match/i.test(t);
+      },
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const count = await page.evaluate(() => {
+    const t = document.body.innerText || "";
+    const m = t.match(/~?([\d,]+)\s+results?/i);
+    return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+  });
+  log(`brand-count read=${count}`);
+  return count;
 }
 
 /**
@@ -1619,18 +1678,23 @@ async function scrapeMetaAdLibraryInner(
           { exactUsername: confirmedUsername },
         );
         if (captured.matchedCards > 0) {
+          let trueCount = 0;
+          if (captured.pageId) {
+            trueCount = await readBrandCountForPageId(page, captured.pageId, country, log);
+          }
+          const totalCount = trueCount > 0 ? trueCount : captured.matchedCards;
           log(
-            `DONE strategy=confirmed-username ads=${captured.ads.length} matched=${captured.matchedCards} username=${confirmedUsername}`,
+            `DONE strategy=confirmed-username ads=${captured.ads.length} matched=${captured.matchedCards} totalCount=${totalCount} username=${confirmedUsername}`,
           );
           return {
             success: captured.ads.length > 0,
             ads: captured.ads,
-            totalCount: captured.matchedCards,
+            totalCount,
             videoCount: captured.videoCount,
             imageCount: captured.imageCount,
             reason:
               captured.ads.length > 0
-                ? `Captured ${captured.ads.length} of ${captured.matchedCards} ads visible from ${confirmedUsername}'s page.`
+                ? `Captured ${captured.ads.length} of ${totalCount} active ads for ${confirmedUsername}.`
                 : `Saw ${captured.matchedCards} matching cards but couldn't screenshot any image ads.`,
             trace,
           };
@@ -1646,18 +1710,23 @@ async function scrapeMetaAdLibraryInner(
           { exactUsername: confirmedUsername },
         );
         if (captured2.matchedCards > 0) {
+          let trueCount = 0;
+          if (captured2.pageId) {
+            trueCount = await readBrandCountForPageId(page, captured2.pageId, country, log);
+          }
+          const totalCount = trueCount > 0 ? trueCount : captured2.matchedCards;
           log(
-            `DONE strategy=confirmed-username-brand-keyword ads=${captured2.ads.length} matched=${captured2.matchedCards}`,
+            `DONE strategy=confirmed-username-brand-keyword ads=${captured2.ads.length} matched=${captured2.matchedCards} totalCount=${totalCount}`,
           );
           return {
             success: captured2.ads.length > 0,
             ads: captured2.ads,
-            totalCount: captured2.matchedCards,
+            totalCount,
             videoCount: captured2.videoCount,
             imageCount: captured2.imageCount,
             reason:
               captured2.ads.length > 0
-                ? `Captured ${captured2.ads.length} of ${captured2.matchedCards} ads visible from ${confirmedUsername}'s page.`
+                ? `Captured ${captured2.ads.length} of ${totalCount} active ads for ${confirmedUsername}.`
                 : `Saw ${captured2.matchedCards} matching cards but couldn't screenshot any image ads.`,
             trace,
           };
@@ -1723,18 +1792,26 @@ async function scrapeMetaAdLibraryInner(
           log,
         );
         if (captured.matchedCards > 0) {
+          // If we harvested a numeric page_id from the matched cards, ask
+          // Meta for the brand's authoritative active-ad count. Avoids
+          // reporting "2 ads" when the brand actually runs hundreds.
+          let trueCount = 0;
+          if (captured.pageId) {
+            trueCount = await readBrandCountForPageId(page, captured.pageId, country, log);
+          }
+          const totalCount = trueCount > 0 ? trueCount : captured.matchedCards;
           log(
-            `DONE strategy=keyword-username-match ads=${captured.ads.length} matched=${captured.matchedCards} pageName="${captured.pageName ?? "n/a"}"`,
+            `DONE strategy=keyword-username-match ads=${captured.ads.length} matched=${captured.matchedCards} totalCount=${totalCount} pageName="${captured.pageName ?? "n/a"}"`,
           );
           return {
             success: captured.ads.length > 0,
             ads: captured.ads,
-            totalCount: captured.matchedCards,
+            totalCount,
             videoCount: captured.videoCount,
             imageCount: captured.imageCount,
             reason:
               captured.ads.length > 0
-                ? `Captured ${captured.ads.length} of ${captured.matchedCards} active ads we could see for ${captured.pageName ?? companyName}.`
+                ? `Captured ${captured.ads.length} of ${totalCount} active ads for ${captured.pageName ?? companyName}.`
                 : `Saw ${captured.matchedCards} matching cards but couldn't screenshot any image ads (likely all video).`,
             trace,
           };

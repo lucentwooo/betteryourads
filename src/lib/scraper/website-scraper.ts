@@ -170,6 +170,38 @@ async function scrapeWebsiteInner(
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" })).catch(() => {});
     await new Promise((r) => setTimeout(r, 400));
 
+    // Heavy SPAs like canva.com / framer.com keep painting indefinitely
+    // (auto-playing hero videos, looping CSS animations, infinite-scroll
+    // prefetch). Chromium responds to page.screenshot with
+    // "Protocol error (Page.captureScreenshot): Unable to capture
+    // screenshot" because the surface never settles. Freeze the page
+    // before requesting the surface: stop the network, pause every
+    // <video>, and disable all CSS animations/transitions.
+    try {
+      const cdp = await page.target().createCDPSession();
+      await cdp.send("Page.stopLoading").catch(() => {});
+      await cdp.detach().catch(() => {});
+    } catch {
+      /* ignore */
+    }
+    await page
+      .evaluate(() => {
+        document.querySelectorAll("video").forEach((v) => {
+          try {
+            (v as HTMLVideoElement).pause();
+            (v as HTMLVideoElement).removeAttribute("autoplay");
+          } catch {
+            /* ignore */
+          }
+        });
+        const style = document.createElement("style");
+        style.textContent =
+          "*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }";
+        document.head.appendChild(style);
+      })
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 200));
+
     const captureHeight = 900;
     step(`capturing 1440x${captureHeight} viewport at ${page.url()}`);
 
@@ -180,18 +212,42 @@ async function scrapeWebsiteInner(
           type: "jpeg",
           quality: 70,
           clip: { x: 0, y: 0, width: 1440, height: captureHeight },
+          captureBeyondViewport: false,
         })
       );
     } catch (e) {
       step(`clipped screenshot failed: ${e instanceof Error ? e.message : e}; trying viewport fallback`);
       try {
         buffer = Buffer.from(
-          await page.screenshot({ type: "jpeg", quality: 65, fullPage: false })
+          await page.screenshot({
+            type: "jpeg",
+            quality: 60,
+            fullPage: false,
+            captureBeyondViewport: false,
+          })
         );
         step(`viewport fallback screenshot OK`);
       } catch (e2) {
-        step(`viewport fallback also failed: ${e2 instanceof Error ? e2.message : e2}`);
-        throw e2;
+        step(`viewport fallback failed: ${e2 instanceof Error ? e2.message : e2}; trying small clip`);
+        // Last resort: shrink viewport then clip a smaller surface. Some
+        // pages crash Chromium's capture pipeline at 1440 wide but succeed
+        // at 1024 wide.
+        try {
+          await page.setViewport({ width: 1024, height: 700 });
+          await new Promise((r) => setTimeout(r, 300));
+          buffer = Buffer.from(
+            await page.screenshot({
+              type: "jpeg",
+              quality: 55,
+              clip: { x: 0, y: 0, width: 1024, height: 700 },
+              captureBeyondViewport: false,
+            })
+          );
+          step(`small-clip fallback screenshot OK`);
+        } catch (e3) {
+          step(`small-clip fallback also failed: ${e3 instanceof Error ? e3.message : e3}`);
+          throw e3;
+        }
       }
     }
     const localScreenshotPath = path.join(outputDir, "website-screenshot.jpg");
