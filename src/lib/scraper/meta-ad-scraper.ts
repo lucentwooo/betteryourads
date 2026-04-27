@@ -437,6 +437,12 @@ async function findOfficialFacebookUsername(
       prompt: `Find the most popular Facebook page for the brand "${brandName}". Search the web for it. Reply with ONLY the URL in the form https://www.facebook.com/<username> — no extra explanation, no markdown, no quotes. If multiple pages exist, return the one with the most followers. Only reply NONE if you genuinely cannot find any Facebook page for this brand at all.`,
       maxTokens: 200,
       timeoutMs: 25_000,
+      // Use sonar-pro here — recall matters: Sonar (regular) returns "NONE"
+      // on big brands like Toyota / Canva / Adobe Express because their
+      // "official Facebook page" doesn't surface in a 2s search. The FB
+      // page resolution is a critical gate (drives whole brand-ads flow),
+      // so the ~$0.01 extra is worth it.
+      tier: "pro",
     });
   } catch (e) {
     log(`search Perplexity call failed: ${e instanceof Error ? e.message : e}`);

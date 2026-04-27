@@ -14,7 +14,7 @@ const client = new Anthropic();
 // Haiku 4.5 handles categorization / suggestion / short-format writing;
 // Sonnet 4 is reserved for real reasoning tasks (full diagnosis).
 const MODEL_CHEAP = "claude-haiku-4-5-20251001";
-const MODEL_SMART = "claude-sonnet-4-20250514";
+const MODEL_SMART = "claude-sonnet-4-6";
 
 export async function runDiagnosis(params: {
   companyName: string;
@@ -39,8 +39,12 @@ export async function runDiagnosis(params: {
   if (params.cheap) {
     raw = await chatText(prompt, { maxTokens: 6000 });
   } else {
+    // Final diagnosis is the customer-facing executive summary —
+    // promote to Sonnet 4.6. The other diagnosis calls (categorize,
+    // suggestCompetitors, brand do/don'ts) are short structured
+    // extraction and stay on Haiku.
     const message = await client.messages.create({
-      model: MODEL_CHEAP,
+      model: MODEL_SMART,
       max_tokens: 8000,
       messages: [{ role: "user", content: prompt }],
     });

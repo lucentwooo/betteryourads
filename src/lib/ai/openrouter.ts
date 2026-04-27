@@ -152,11 +152,14 @@ export async function perplexitySearch(params: {
   system?: string;
   maxTokens?: number;
   timeoutMs?: number;
+  /** "pro" → perplexity/sonar-pro (better recall, ~3x cost). Default = sonar. */
+  tier?: "sonar" | "pro";
 }): Promise<{ text: string; citations: string[] }> {
   const messages: ChatMessage[] = [];
   if (params.system) messages.push({ role: "system", content: params.system });
   messages.push({ role: "user", content: params.prompt });
-  const { text, raw } = await chatRequest(SEARCH_MODEL, messages, {
+  const model = params.tier === "pro" ? "perplexity/sonar-pro" : SEARCH_MODEL;
+  const { text, raw } = await chatRequest(model, messages, {
     maxTokens: params.maxTokens ?? 2000,
     timeoutMs: params.timeoutMs ?? 90_000,
     temperature: 0.3,

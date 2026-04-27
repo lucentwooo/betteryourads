@@ -1,5 +1,5 @@
 import type { VoiceOfCustomer, VocSnippet, VocPattern, VocSource, AnalysisInput } from "../types";
-import { client, MODEL, extractJson, runWithQA, judgeWithRubric, findBannedPhrases } from "./shared";
+import { client, MODEL_CHEAP, extractJson, runWithQA, judgeWithRubric, findBannedPhrases } from "./shared";
 import { perplexitySearch, chatText } from "../ai/openrouter";
 
 function classifySourceUrl(url: string): VocSource {
@@ -204,7 +204,7 @@ export async function runResearcher(
 
   // ---------- Phase 1: identify relevant subreddits + review sites ----------
   const sourcesRes = await client.messages.create({
-    model: MODEL,
+    model: MODEL_CHEAP,
     max_tokens: 1000,
     system: sourceIdentificationPrompt,
     messages: [
@@ -258,7 +258,7 @@ At least 3 subreddits, at least 2 review-site URLs, include niche-specific forum
       try {
         msg = await client.messages.create(
           {
-            model: MODEL,
+            model: MODEL_CHEAP,
             max_tokens: 8000,
             system: researchSystemPrompt,
             tools: [WEB_SEARCH_TOOL],

@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import type { Creative, BrandProfile } from "../types";
-import { client, MODEL, runWithQA, judgeWithRubric } from "./shared";
+import { client, MODEL_CHEAP, runWithQA, judgeWithRubric } from "./shared";
 import { KieClient } from "../imagegen/kie-client";
 import { putImage } from "../storage/image-store";
 import { STORAGE_ROOT } from "../storage-root";
@@ -138,7 +138,7 @@ Return ONLY JSON:
 Pass requires EVERY score >= 7. Be strict — reject gibberish text, low contrast, template vibes.`;
 
   const msg = await client.messages.create({
-    model: MODEL,
+    model: MODEL_CHEAP,
     max_tokens: 1500,
     messages: [
       {

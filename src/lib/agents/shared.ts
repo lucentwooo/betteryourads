@@ -5,7 +5,12 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages";
 import type { QAResult } from "../types";
 
-export const MODEL = "claude-sonnet-4-20250514";
+// Sonnet 4.6 for customer-facing creative + decision agents (strategist,
+// creative-director, copywriter, art-director, diagnosis synthesis).
+export const MODEL = "claude-sonnet-4-6";
+// Haiku 4.5 for orchestration, evaluation, and structured-output extraction
+// (researcher, image-generator orchestrator, QA rubric judging).
+export const MODEL_CHEAP = "claude-haiku-4-5-20251001";
 export const OPENROUTER_MODEL =
   process.env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3.1";
 export const client = new Anthropic();
@@ -219,7 +224,7 @@ ${schemaHint}
 A pass requires EVERY dimension to score >= ${params.passThreshold}. Be strict. Favor a fail over a borderline pass.`;
 
   const msg = await createTextMessage({
-    model: MODEL,
+    model: MODEL_CHEAP,
     max_tokens: 2000,
     system: params.systemPrompt,
     messages: [{ role: "user", content: full }],
