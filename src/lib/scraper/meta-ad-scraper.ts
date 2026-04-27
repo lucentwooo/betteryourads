@@ -1484,12 +1484,24 @@ async function readBrandCountFromPagesTab(
         best,
         bestScore,
         bodyPreview: (document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200),
+        tilesPreview: tiles.slice(0, 3).map((t) => ({
+          username: t.username,
+          pageId: t.pageId,
+          count: t.count,
+          textPreview: t.text.replace(/\s+/g, " ").trim().slice(0, 200),
+        })),
       };
     }, { wantUsername: matchUsername, wantPageId: matchPageId, rawTerm: searchTerm });
 
     log(`pages-tab country=${c} tiles=${probe.tilesFound} bestScore=${probe.bestScore} bestCount=${probe.best?.count ?? 0} bestUsername=${probe.best?.username ?? "n/a"}`);
     if (probe.tilesFound === 0) {
       log(`pages-tab country=${c} body="${probe.bodyPreview}"`);
+    } else if (probe.bestScore < 0 || (probe.best && probe.best.count === 0)) {
+      // Tiles rendered but we couldn't match or extract count — dump
+      // the first 3 so the next iteration can see what's actually there.
+      for (const t of probe.tilesPreview) {
+        log(`pages-tab tile username=${t.username ?? "n/a"} pageId=${t.pageId ?? "n/a"} count=${t.count} text="${t.textPreview}"`);
+      }
     }
     if (probe.best && probe.best.count > 0) {
       return probe.best.count;
