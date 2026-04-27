@@ -264,4 +264,7 @@ export interface Job {
    * job so we can diagnose ad-scraping failures without relying on Vercel
    * runtime logs (which silently drop most output under load). */
   scraperTrace?: Record<string, string[]>;
+  /** Facebook usernames found in the brand's own website footer/links.
+   * Far more reliable than guessing or asking Perplexity. */
+  brandFacebookUsernames?: string[];
 }

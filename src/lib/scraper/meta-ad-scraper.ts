@@ -23,7 +23,7 @@ export async function scrapeMetaAdLibrary(
   outputDir: string,
   prefix: string = "company",
   companyUrl?: string,
-  options?: { countryOverride?: string },
+  options?: { countryOverride?: string; hintedUsernames?: string[] },
 ): Promise<MetaAdResult> {
   const trace: string[] = [];
   const log = (msg: string) => {
@@ -47,7 +47,16 @@ export async function scrapeMetaAdLibrary(
 
   return Promise.race([
     timeoutPromise,
-    scrapeMetaAdLibraryInner(companyName, outputDir, prefix, companyUrl, options?.countryOverride, log, trace),
+    scrapeMetaAdLibraryInner(
+      companyName,
+      outputDir,
+      prefix,
+      companyUrl,
+      options?.countryOverride,
+      options?.hintedUsernames,
+      log,
+      trace,
+    ),
   ]);
 }
 
@@ -1481,6 +1490,7 @@ async function scrapeMetaAdLibraryInner(
   prefix: string,
   companyUrl: string | undefined,
   countryOverride: string | undefined,
+  hintedUsernames: string[] | undefined,
   log: (msg: string) => void,
   trace: string[],
 ): Promise<MetaAdResult> {
@@ -1537,7 +1547,34 @@ async function scrapeMetaAdLibraryInner(
     // exactly one official Facebook page per brand, and a search engine
     // can find it deterministically.
     let confirmedUsername: string | null = null;
-    {
+    // First, prefer any usernames extracted from the brand's own website
+    // (e.g. footer FB link). These are deterministically the right page —
+    // a brand wouldn't link to a competitor's FB from their own site.
+    if (hintedUsernames && hintedUsernames.length > 0) {
+      const hint = hintedUsernames[0];
+      log(`hint using FB username from website: "${hint}"`);
+      confirmedUsername = hint;
+      const pageId = await resolvePageIdFromUsername(page, hint, companyName, log);
+      if (pageId) {
+        const captured = await captureAdsForPage(page, pageId, primaryCountry, outputDir, prefix, log);
+        if (captured.brandCount > 0 || captured.ads.length > 0) {
+          log(`DONE strategy=hint-lookup username=${hint} pageId=${pageId} ads=${captured.ads.length} brandCount=${captured.brandCount}`);
+          return {
+            success: captured.ads.length > 0,
+            ads: captured.ads,
+            totalCount: captured.brandCount || captured.imageCount + captured.videoCount,
+            videoCount: captured.videoCount,
+            imageCount: captured.imageCount,
+            reason:
+              captured.ads.length > 0
+                ? `Found ${captured.brandCount || captured.imageCount + captured.videoCount} active ads on ${companyName}'s official Facebook page; captured ${captured.ads.length} samples.`
+                : `${companyName} runs ${captured.brandCount} active ads but they're all video.`,
+            trace,
+          };
+        }
+      }
+    }
+    if (!confirmedUsername) {
       const username = await findOfficialFacebookUsername(companyName, log);
       if (username) {
         confirmedUsername = username;

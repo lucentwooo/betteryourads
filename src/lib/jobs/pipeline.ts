@@ -216,6 +216,13 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
       : pageRes?.ogImage
       ? { websiteScreenshot: pageRes.ogImage }
       : {}),
+    // Persist any Facebook usernames we found in the brand's own
+    // website footer/links — most reliable hint for the brand's
+    // official FB page. The ad scraper uses these as a hint before
+    // falling back to Perplexity.
+    ...(screenshotRes && "facebookUsernames" in screenshotRes && screenshotRes.facebookUsernames?.length
+      ? { brandFacebookUsernames: screenshotRes.facebookUsernames }
+      : {}),
   });
   await addProgress(
     jobId,
@@ -311,7 +318,10 @@ async function stageCompanyAds(jobId: string): Promise<void> {
       job.input.companyName,
       adsDir,
       "company",
-      job.input.companyUrl
+      job.input.companyUrl,
+      // Hand the scraper the FB usernames found in the brand's own website,
+      // so it can skip guessing and go straight to the right page.
+      { hintedUsernames: job.brandFacebookUsernames },
     ),
     META_SCRAPE_TIMEOUT_MS,
     `scrapeMetaAdLibrary(${job.input.companyName})`

@@ -13,6 +13,10 @@ export interface WebsiteScrapResult {
   headings: string[];
   heroContent: string;
   ogImage?: string;
+  /** Facebook usernames extracted from the page's links. First entry is
+   * almost always the brand's own FB page. Used by the ad scraper to
+   * find the brand's official page deterministically. */
+  facebookUsernames?: string[];
   // When callers pass their own browser via `existingBrowser`, we leave
   // the page on the loaded URL so they can reuse it (e.g. brand extraction).
   page?: Page;
@@ -155,56 +159,20 @@ async function scrapeWebsiteInner(
     // viewport reaches them AND after their network requests complete. We
     // need three things: scroll deep enough to trigger every section, wait
     // for those sections' images/JS to actually finish loading, then return
-    // to top before screenshotting. Otherwise the measured scrollHeight is
-    // tiny and we screenshot only the hero.
-    step(`starting scroll loop`);
-    let lastHeight = 0;
-    for (let i = 0; i < 10; i++) {
-      const newHeight = await page
-        .evaluate(() => {
-          window.scrollBy(0, 1500);
-          return document.documentElement.scrollHeight;
-        })
-        .catch(() => 0);
-      // Brief settle for lazy images. Aggressive cap: total time across the
-      // loop is bounded so we don't blow past SCRAPE_TIMEOUT_MS.
-      await page
-        .waitForNetworkIdle({ idleTime: 300, timeout: 800 })
-        .catch(() => {});
-      if (newHeight === lastHeight && i > 2) break;
-      lastHeight = newHeight;
-    }
-    // Scroll back to top and let any sticky/header repositioning settle.
+    // No scroll loop. Repeated scrollBy + waitForNetworkIdle on a long
+    // marketing page triggers lazy-loaded images/videos faster than
+    // Chromium can render them, and on Vercel serverless that consumes
+    // enough memory to kill the page session before we ever reach the
+    // screenshot call. We just need a hero-area screenshot for brand
+    // color extraction; the full DOM text comes from page.evaluate
+    // anyway, not from the visual.
+    step(`skipping scroll loop, capturing viewport directly`);
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" })).catch(() => {});
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 400));
 
-    const pageHeight = await page
-      .evaluate(() => {
-        const body = document.body;
-        const html = document.documentElement;
-        return Math.max(
-          body?.scrollHeight || 0,
-          body?.offsetHeight || 0,
-          html?.clientHeight || 0,
-          html?.scrollHeight || 0,
-          html?.offsetHeight || 0
-        );
-      })
-      .catch(() => 900);
-    const captureHeight = Math.max(
-      900,
-      Math.min(Math.ceil(pageHeight), MAX_SCREENSHOT_HEIGHT)
-    );
-    step(`measured pageHeight=${pageHeight} captureHeight=${captureHeight} finalUrl=${page.url()}`);
+    const captureHeight = 900;
+    step(`capturing 1440x${captureHeight} viewport at ${page.url()}`);
 
-    // Capture as JPEG at moderate quality. PNG of a tall page is several MB
-    // of raw pixel data that round-trips through the Chromium DevTools
-    // protocol — that's what was killing the page session with
-    // TargetCloseError on Vercel serverless. Brand colour extraction works
-    // fine off JPEG.
-    // Try the full clipped screenshot first. If Chromium crashes (Target
-    // closed mid-encode is a recurring Vercel-serverless OOM symptom),
-    // fall back to a viewport-only capture which uses far less memory.
     let buffer: Buffer;
     try {
       buffer = Buffer.from(
@@ -218,11 +186,7 @@ async function scrapeWebsiteInner(
       step(`clipped screenshot failed: ${e instanceof Error ? e.message : e}; trying viewport fallback`);
       try {
         buffer = Buffer.from(
-          await page.screenshot({
-            type: "jpeg",
-            quality: 65,
-            fullPage: false,
-          })
+          await page.screenshot({ type: "jpeg", quality: 65, fullPage: false })
         );
         step(`viewport fallback screenshot OK`);
       } catch (e2) {
@@ -267,7 +231,43 @@ async function scrapeWebsiteInner(
 
       const textContent = document.body.innerText.slice(0, 10000);
 
-      return { title, description: metaDesc, headings, heroContent, textContent, ogImage };
+      // Find Facebook page links — most brand sites link to their FB page
+      // in the footer/social section. This is a far more reliable source
+      // for the brand's actual FB username than a web search guess.
+      const fbAnchors = Array.from(
+        document.querySelectorAll('a[href*="facebook.com"]')
+      ) as HTMLAnchorElement[];
+      const SYSTEM_FB_PATHS = new Set([
+        "ads", "policies", "privacy", "help", "pages", "business",
+        "login", "signup", "about", "careers", "groups", "watch",
+        "share", "sharer", "sharer.php", "tr", "dialog", "plugins",
+        "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0", "v8.0", "v9.0",
+      ]);
+      const facebookUsernames: string[] = [];
+      for (const a of fbAnchors) {
+        try {
+          const u = new URL(a.href);
+          if (!u.hostname.endsWith("facebook.com")) continue;
+          const parts = u.pathname.split("/").filter(Boolean);
+          if (parts.length === 0) continue;
+          const first = parts[0];
+          if (!first || first.length < 2) continue;
+          if (SYSTEM_FB_PATHS.has(first.toLowerCase())) continue;
+          if (!facebookUsernames.includes(first)) facebookUsernames.push(first);
+        } catch {
+          /* ignore malformed urls */
+        }
+      }
+
+      return {
+        title,
+        description: metaDesc,
+        headings,
+        heroContent,
+        textContent,
+        ogImage,
+        facebookUsernames: facebookUsernames.slice(0, 5),
+      };
     });
 
     return {
