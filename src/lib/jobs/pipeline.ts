@@ -7,6 +7,7 @@ import {
   extractBrandColorsFromScreenshot,
   extractBrandColorsFromUrl,
 } from "../ai/brand-vision";
+import { extractBrandColorsFromHtml } from "../ai/html-colors";
 import { scrapeMetaAdLibrary } from "../scraper/meta-ad-scraper";
 import { generateBrandDosAndDonts } from "../ai/diagnosis";
 import { runResearcher, runResearcherCheap } from "../agents/researcher";
@@ -279,10 +280,54 @@ async function stageWebsiteAndBrand(jobId: string): Promise<void> {
         `${vision.primary} / ${vision.secondary} / ${vision.accent} (${vision.confidence})`
       );
     } else {
+      // Vision failed (rate limit, bad image format, geo-block on og:image).
+      // Last-resort: parse the raw HTML for theme-color / CSS vars / most-
+      // frequent saturated hex. Deterministic, no LLM needed.
+      const html = pageRes?.raw || "";
+      const htmlPalette = extractBrandColorsFromHtml(html);
+      if (htmlPalette) {
+        profile = {
+          ...DEFAULT_BRAND,
+          colors: {
+            primary: htmlPalette.primary,
+            secondary: htmlPalette.secondary,
+            accent: htmlPalette.accent,
+            background: htmlPalette.background,
+            text: htmlPalette.text,
+          },
+        };
+        await addProgress(
+          jobId,
+          "Palette extracted (HTML fallback)",
+          `${htmlPalette.primary} (vision failed; pulled from theme-color/CSS)`,
+        );
+      } else {
+        await addProgress(
+          jobId,
+          "Palette fallback",
+          "Vision and HTML scan both failed — using neutral default",
+        );
+      }
+    }
+  } else {
+    // No screenshot, no og:image. Try HTML scan if we have raw HTML.
+    const html = pageRes?.raw || "";
+    const htmlPalette = extractBrandColorsFromHtml(html);
+    if (htmlPalette) {
+      profile = {
+        ...DEFAULT_BRAND,
+        colors: {
+          primary: htmlPalette.primary,
+          secondary: htmlPalette.secondary,
+          accent: htmlPalette.accent,
+          background: htmlPalette.background,
+          text: htmlPalette.text,
+        },
+      };
       await addProgress(
         jobId,
-        "Palette fallback",
-        "Vision couldn't read og:image — using neutral default"
+        "Palette extracted (HTML fallback)",
+        `${htmlPalette.primary} (no screenshot; pulled from theme-color/CSS)`,
       );
     }
   }

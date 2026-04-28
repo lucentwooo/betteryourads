@@ -2242,13 +2242,20 @@ async function scrapeMetaAdLibraryInner(
     }
 
     log(`all strategies exhausted — no ads found for "${companyName}"`);
+    // If we successfully found their FB page (confirmedUsername set) but
+    // still got 0 cards across every country we tried, that's almost
+    // always Meta IP-blocking automated requests — not a brand without
+    // ads. Be honest about which case we're in instead of guessing.
+    const reason = confirmedUsername
+      ? `Found ${companyName}'s Facebook page (@${confirmedUsername}) but Meta blocked us from reading their ad page. This is common for big brands when scraped from cloud IPs. Check the Ad Library manually for the real count.`
+      : `Couldn't find ${companyName}'s Facebook page or any matching ads on Meta. Either the brand isn't on Facebook under that name or Meta blocked our search.`;
     return {
       success: false,
       ads: [],
       totalCount: 0,
       videoCount: 0,
       imageCount: 0,
-      reason: `No matching ads for "${companyName}" on Meta. They may not be running ads, or Meta isn't serving them to our region.`,
+      reason,
       trace,
     };
   } catch (error) {
@@ -2416,7 +2423,7 @@ async function keywordSearchFallback(
       totalCount: 0,
       videoCount: 0,
       imageCount: 0,
-      reason: `No matching ads for "${companyName}". They likely aren't running Meta ads under this brand name.`,
+      reason: `Couldn't capture ads for "${companyName}" — Meta's Ad Library returned no matches across the countries we tried. Common reasons: the brand runs ads under a different name, Meta is rate-limiting our IP, or they truly aren't running Meta ads. Manually search the Ad Library to confirm.`,
     };
   }
 
