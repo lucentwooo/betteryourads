@@ -17,8 +17,9 @@ import type { Job } from "@/lib/types";
 const SECTIONS: { id: string; num: string; label: string }[] = [
   { id: "ads", num: "01", label: "Your ads" },
   { id: "rivals", num: "02", label: "Rivals" },
-  { id: "voc", num: "03", label: "Customer voice" },
-  { id: "plan", num: "04", label: "The plan" },
+  { id: "diagnosis", num: "03", label: "Diagnosis" },
+  { id: "voc", num: "04", label: "Customer voice" },
+  { id: "plan", num: "05", label: "The plan" },
 ];
 
 export default function AnalyzePage() {
@@ -270,7 +271,7 @@ export default function AnalyzePage() {
             jobId={jobId}
             totalCount={job.companyAdCount}
             videoCount={job.companyVideoCount}
-            emptyMessage="No active Meta ads found for this brand. Likely they're not running on Meta right now — many B2B brands focus their spend on LinkedIn or Google. The competitor breakdown below is still relevant for spotting what's working in your category."
+            emptyMessage="No active Meta ads detected. Two likely reasons: (1) the brand isn't running on Meta right now, or (2) the brand's Facebook page name differs from the company name and our scraper couldn't bind to it. Manually checking the Meta Ad Library is the fastest sanity check. The competitor breakdown below and the diagnosis remain valid either way."
           />
         </Section>
 
@@ -293,9 +294,22 @@ export default function AnalyzePage() {
           </Section>
         )}
 
-        {topQuotes.length > 0 && (
+        {job.diagnosis && (
           <Section
             num="03"
+            label="Diagnosis"
+            id="diagnosis"
+            title="What's actually {em}."
+            emphasis="going on"
+            kicker="The pattern across your ads, your rivals, and your category — and what to do about it."
+          >
+            <DiagnosisGrid diagnosis={job.diagnosis} />
+          </Section>
+        )}
+
+        {topQuotes.length > 0 && (
+          <Section
+            num="04"
             label="Customer voice"
             id="voc"
             title="The words your customers {em} use."
@@ -324,7 +338,7 @@ export default function AnalyzePage() {
 
         {(topConcepts.length > 0 || topCreatives.length > 0) && (
           <Section
-            num="04"
+            num="05"
             label="The plan"
             id="plan"
             title="3 concepts to {em}."
@@ -366,6 +380,166 @@ export default function AnalyzePage() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function bulletsFrom(raw: unknown, max = 6): string[] {
+  const text =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw)
+      ? (raw as unknown[]).map(String).join("\n")
+      : String(raw ?? "");
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .filter((l) => !/^[-*_]{2,}$/.test(l))
+    .filter((l) => !/^#{1,6}\s/.test(l))
+    .map((l) =>
+      l
+        .replace(/^[-*•·▸▹‣–—]\s*/, "")
+        .replace(/\*\*(.*?)\*\*/g, "$1")
+        .replace(/\*(.*?)\*/g, "$1")
+        .trim(),
+    )
+    .filter((l) => l.length > 3)
+    .slice(0, max);
+}
+
+function DiagnosisGrid({
+  diagnosis,
+}: {
+  diagnosis: NonNullable<Job["diagnosis"]>;
+}) {
+  const panels = [
+    {
+      eyebrow: "What's working",
+      tone: "sage" as const,
+      bullets: bulletsFrom(diagnosis.doingWell),
+      hint: "Keep these alive — they're the foundation.",
+    },
+    {
+      eyebrow: "What's not",
+      tone: "coral" as const,
+      bullets: bulletsFrom(diagnosis.notWorking),
+      hint: "Kill or rework. These are dragging spend.",
+    },
+    {
+      eyebrow: "Rival wins to learn from",
+      tone: "butter" as const,
+      bullets: bulletsFrom(diagnosis.competitorWins),
+      hint: "Patterns competitors print money on. Copy the structure, not the asset.",
+    },
+    {
+      eyebrow: "Low-hanging opportunities",
+      tone: "blush" as const,
+      bullets: bulletsFrom(diagnosis.missingOpportunities),
+      hint: "Untouched ground. Highest ROI per hour of work.",
+    },
+  ];
+
+  const stage = bulletsFrom(diagnosis.awarenessStageAnalysis, 4);
+
+  return (
+    <div className="space-y-12">
+      {diagnosis.executiveSummary && (
+        <div className="relative max-w-3xl">
+          <span className="font-serif pointer-events-none absolute -left-2 -top-8 text-7xl leading-none text-coral/60 md:-left-6 md:text-8xl">
+            “
+          </span>
+          <p className="font-semibold text-[clamp(1.15rem,1.8vw,1.55rem)] leading-[1.35] text-ink">
+            {String(diagnosis.executiveSummary).replace(/^["“]|["”]$/g, "").trim()}
+          </p>
+        </div>
+      )}
+
+      <div className="grid gap-5 md:grid-cols-2">
+        {panels.map((p) => (
+          <DiagnosisPanel key={p.eyebrow} {...p} />
+        ))}
+      </div>
+
+      {stage.length > 0 && (
+        <div className="border-t hairline pt-10">
+          <div className="eyebrow text-ink/55">Awareness-stage gap</div>
+          <p className="mt-2 max-w-3xl text-sm text-ink/60">
+            Where your creative is hitting vs where the demand actually sits. The biggest CAC leaks usually live in the gap between these.
+          </p>
+          <ul className="mt-6 space-y-3">
+            {stage.map((b, i) => (
+              <li
+                key={i}
+                className="grid grid-cols-[auto_1fr] items-baseline gap-4 border-b hairline pb-3 last:border-0"
+              >
+                <span className="font-mono text-[0.7rem] uppercase tracking-[0.2em] text-coral">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span className="text-[0.95rem] leading-[1.55] text-ink/85">
+                  {b}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiagnosisPanel({
+  eyebrow,
+  tone,
+  bullets,
+  hint,
+}: {
+  eyebrow: string;
+  tone: "sage" | "coral" | "butter" | "blush";
+  bullets: string[];
+  hint: string;
+}) {
+  const toneMap: Record<typeof tone, { bg: string; dot: string; text: string }> = {
+    sage: { bg: "bg-sage/10", dot: "bg-sage", text: "text-ink" },
+    coral: { bg: "bg-coral/10", dot: "bg-coral", text: "text-ink" },
+    butter: { bg: "bg-butter/40", dot: "bg-ink", text: "text-ink" },
+    blush: { bg: "bg-blush/40", dot: "bg-coral", text: "text-ink" },
+  };
+  const cls = toneMap[tone];
+
+  if (bullets.length === 0) {
+    return (
+      <div className={`rounded-[1.3rem] border hairline p-6 ${cls.bg}`}>
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${cls.dot}`} />
+          <div className="eyebrow text-ink/55">{eyebrow}</div>
+        </div>
+        <p className="mt-4 text-sm text-ink/55">
+          Nothing surfaced here. The strategist couldn&apos;t isolate enough signal — usually means too few ads in market.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-[1.3rem] border hairline p-6 ${cls.bg}`}>
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 rounded-full ${cls.dot}`} />
+        <div className="eyebrow text-ink/55">{eyebrow}</div>
+      </div>
+      <p className="mt-1 text-xs text-ink/45">{hint}</p>
+
+      <ul className="mt-5 space-y-3">
+        {bullets.map((b, i) => (
+          <li
+            key={i}
+            className="grid grid-cols-[auto_1fr] gap-3 text-[0.92rem] leading-[1.5] text-ink/85"
+          >
+            <span className={`mt-2 h-1 w-1 shrink-0 rounded-full ${cls.dot}`} />
+            <span>{b}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -101,30 +101,43 @@ function buildPageScopedUrl(pageId: string, country: string): string {
   return `https://www.facebook.com/ads/library/?${params.toString()}`;
 }
 
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
 /**
- * Normalized fuzzy match. Lowercases and strips everything that isn't
- * alphanumeric, then accepts substring matches in either direction.
- *   "Notion HQ"  ~  "notion"      → match
- *   "Duolingo"   ~  "duolingo"    → match
- *   "Career Unlocked" ~ "notion"  → no match
+ * Score how confidently a Facebook page name matches the queried brand.
+ * Higher = better. 0 = no match.
+ *   100  exact normalized match            ("Groupon" ~ "Groupon")
+ *    70  prefix match                      ("Groupon Australia" ~ "Groupon")
+ *    40  query contains page (rare)        ("Apple" ~ "Apple Inc")
+ *    20  loose substring                   ("GrouponDeals" ~ "Groupon")
+ *     0  unrelated                         ("Career Unlocked" ~ "Notion")
+ *
+ * The tiered score is what stops impostor pages — a real "Groupon" page
+ * scores 100 and beats a substring-y "GrouponSpamPage" scoring 20, even
+ * when the spam page has more ads in the keyword sample.
  */
-function nameMatches(pageName: string, query: string): boolean {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+function nameMatchScore(pageName: string, query: string): number {
   const a = norm(pageName);
   const b = norm(query);
-  if (a.length < 2 || b.length < 2) return false;
-  return a.includes(b) || b.includes(a);
+  if (a.length < 2 || b.length < 2) return 0;
+  if (a === b) return 100;
+  if (a.startsWith(b)) return 70;
+  if (b.startsWith(a)) return 40;
+  if (a.includes(b)) return 20;
+  if (b.includes(a)) return 15;
+  return 0;
 }
 
 /**
- * Group keyword-search results by page, find the page whose name best
- * matches the brand (or a hinted FB username), break ties by ad count.
+ * Group keyword-search results by page. Pick the highest match-quality
+ * page first; tie-break by ad count. Reject anything below score 40 to
+ * avoid impostor pages that just happen to mention the brand somewhere.
  */
 function pickBestPageMatch(
   items: unknown[],
   brandName: string,
   hintedUsernames: string[] = [],
-): { pageId: string; pageName: string; count: number } | null {
+): { pageId: string; pageName: string; count: number; score: number } | null {
   const pages = new Map<string, { pageId: string; pageName: string; count: number }>();
   for (const raw of items) {
     if (!raw || typeof raw !== "object") continue;
@@ -143,13 +156,20 @@ function pickBestPageMatch(
   }
 
   const queries = [brandName, ...hintedUsernames.filter(Boolean)];
-  const candidates = [...pages.values()].filter((p) =>
-    queries.some((q) => nameMatches(p.pageName, q)),
-  );
+  const scored = [...pages.values()]
+    .map((p) => ({
+      ...p,
+      score: Math.max(...queries.map((q) => nameMatchScore(p.pageName, q))),
+    }))
+    // Reject loose-substring impostors. 40+ requires either an exact
+    // normalized hit, a prefix relationship, or page name fully containing
+    // the brand. Bare substring (score 20) is no longer enough.
+    .filter((p) => p.score >= 40);
 
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => b.count - a.count);
-  return candidates[0];
+  if (scored.length === 0) return null;
+  // Best score first, then highest ad count.
+  scored.sort((a, b) => (b.score - a.score) || (b.count - a.count));
+  return scored[0];
 }
 
 /**
@@ -308,12 +328,21 @@ export async function scrapeMetaAdLibraryViaApify(
 
   const actor = process.env.APIFY_META_ACTOR || DEFAULT_ACTOR;
   const actorPath = actor.replace("/", "~");
-  const country =
+  const detectedCountry =
     options?.countryOverride || countryFromDomain(extractDomain(companyUrl));
   const maxAds = options?.maxAds ?? DEFAULT_MAX_ADS;
   const hintedUsernames = (options?.hintedUsernames || []).filter(Boolean);
 
-  log(`actor=${actor} country=${country} brand="${companyName}" hinted=${hintedUsernames.join(",") || "(none)"}`);
+  // Country search order: detected first, then ALL/AU/US as fallbacks. A
+  // brand's FB page might run ads in a region that doesn't match the URL
+  // TLD (eatclub.com.au's page can show up in country=AU but not ALL,
+  // or vice versa depending on Apify's index). Sweep a few before giving up.
+  const countryAttempts = [
+    detectedCountry,
+    ...(["ALL", "AU", "US"].filter((c) => c !== detectedCountry)),
+  ];
+
+  log(`actor=${actor} countries=[${countryAttempts.join(",")}] brand="${companyName}" hinted=${hintedUsernames.join(",") || "(none)"}`);
 
   // ──────────── PASS 1: discover brand's page_id via keyword search ────────────
   // Try hinted FB usernames first (most precise), then the brand name itself.
@@ -321,27 +350,31 @@ export async function scrapeMetaAdLibraryViaApify(
     (q, i, arr) => q && arr.indexOf(q) === i,
   );
 
-  let pageMatch: { pageId: string; pageName: string; count: number } | null = null;
+  let pageMatch: { pageId: string; pageName: string; count: number; score: number } | null = null;
   let pass1Items: unknown[] = [];
+  let country = detectedCountry;
 
-  for (const query of discoveryQueries) {
-    log(`pass1 keyword="${query}"`);
-    const items = await runApifyActor(
-      buildKeywordUrl(query, country),
-      MIN_COUNT,
-      token,
-      actorPath,
-      log,
-    );
-    pass1Items = items;
-    if (items.length === 0) continue;
+  outer: for (const c of countryAttempts) {
+    for (const query of discoveryQueries) {
+      log(`pass1 country=${c} keyword="${query}"`);
+      const items = await runApifyActor(
+        buildKeywordUrl(query, c),
+        MIN_COUNT,
+        token,
+        actorPath,
+        log,
+      );
+      pass1Items = items;
+      if (items.length === 0) continue;
 
-    pageMatch = pickBestPageMatch(items, companyName, hintedUsernames);
-    if (pageMatch) {
-      log(`matched page "${pageMatch.pageName}" (id=${pageMatch.pageId}) with ${pageMatch.count} ad(s) in keyword results`);
-      break;
+      pageMatch = pickBestPageMatch(items, companyName, hintedUsernames);
+      if (pageMatch) {
+        country = c;
+        log(`matched page "${pageMatch.pageName}" (id=${pageMatch.pageId}) score=${pageMatch.score} count=${pageMatch.count} country=${c}`);
+        break outer;
+      }
+      log(`no name-match in ${items.length} items for query "${query}" country=${c}`);
     }
-    log(`no name-match in ${items.length} items for query "${query}"`);
   }
 
   if (!pageMatch) {
