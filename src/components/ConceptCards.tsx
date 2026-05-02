@@ -263,6 +263,26 @@ function StickyCTA({ approvedCount, jobId }: { approvedCount: number; jobId: str
           disabled={disabled}
           onClick={async () => {
             if (disabled) return;
+            // First-time gate: if the user hasn't done the style quiz yet,
+            // route them through it before generating. The quiz returns
+            // here via ?next=. Fail-open if the status check errors so a
+            // flaky network never blocks generation.
+            try {
+              const statusRes = await fetch("/api/style-references/status");
+              if (statusRes.ok) {
+                const data = (await statusRes.json()) as {
+                  count?: number;
+                  hasBrand?: boolean;
+                };
+                if (data.hasBrand && (data.count ?? 0) === 0) {
+                  const next = encodeURIComponent(`/analyze/${jobId}`);
+                  window.location.href = `/onboarding/style-quiz?next=${next}`;
+                  return;
+                }
+              }
+            } catch {
+              /* fail open */
+            }
             await fetch(`/api/jobs/${jobId}/generate`, { method: "POST" }).catch(() => {});
           }}
           className="inline-flex items-center gap-2 rounded-xl bg-coral px-5 py-3 font-semibold text-white transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"

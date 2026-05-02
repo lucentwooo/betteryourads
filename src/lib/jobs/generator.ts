@@ -5,7 +5,40 @@ import { runArtDirector } from "../agents/art-director";
 import { runImageGenerator } from "../agents/image-generator";
 import { humanizeCopy } from "../agents/humanizer";
 import { finalizeJobToSupabase } from "../persistence/finalize-job";
+import { stitchBreakdowns, type AdPromptSeed } from "../style-engine/stitch";
+import { validateBreakdown } from "../style-engine/schema";
+import { createAdminClient } from "../supabase/admin";
 import type { Creative, Concept } from "../types";
+
+/**
+ * Load the user's saved style references and stitch them into N seeds —
+ * one per concept. Returns null if the user has no style refs (the art
+ * director then falls back to the curated reference library).
+ */
+async function loadStyleSeeds(
+  brandId: string | undefined,
+  count: number,
+): Promise<AdPromptSeed[] | null> {
+  if (!brandId || count <= 0) return null;
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("style_references")
+      .select("breakdown")
+      .eq("brand_id", brandId)
+      .order("loved_at", { ascending: false })
+      .limit(8);
+    const rows = (data as Array<{ breakdown: unknown }> | null) ?? [];
+    const breakdowns = rows
+      .map((r) => validateBreakdown(r.breakdown))
+      .filter((b): b is NonNullable<ReturnType<typeof validateBreakdown>> => !!b);
+    if (breakdowns.length === 0) return null;
+    return stitchBreakdowns(breakdowns, count);
+  } catch (err) {
+    console.error("[generator] loadStyleSeeds failed:", err);
+    return null;
+  }
+}
 
 /**
  * Creative production pipeline (Phases 4, 5, 6 of the agent workflow).
@@ -34,12 +67,26 @@ export async function runCreativeProduction(jobId: string): Promise<void> {
     const jobDir = getJobDir(jobId);
     const creativesDir = path.join(jobDir, "creatives");
 
+    // Load the user's saved style breakdowns and stitch one seed per
+    // concept. When present, each concept gets a different structural DNA
+    // so the generated set inherits visible variety from the loved refs.
+    const styleSeeds = await loadStyleSeeds(job.input.brandId, approved.length);
+    if (styleSeeds) {
+      await addProgress(
+        jobId,
+        "Style guide loaded",
+        `Stitched ${styleSeeds.length} seed${styleSeeds.length === 1 ? "" : "s"} from saved references`,
+      );
+    }
+
     const creatives: Creative[] = [];
-    for (const concept of approved) {
+    for (let i = 0; i < approved.length; i++) {
+      const concept = approved[i];
       const creative = await produceOneCreative({
         jobId,
         concept,
         creativesDir,
+        styleSeed: styleSeeds?.[i] ?? null,
       });
       creatives.push(creative);
       // Persist incrementally so the UI can show creatives as they land
@@ -76,8 +123,9 @@ async function produceOneCreative(params: {
   jobId: string;
   concept: Concept;
   creativesDir: string;
+  styleSeed: AdPromptSeed | null;
 }): Promise<Creative> {
-  const { jobId, concept, creativesDir } = params;
+  const { jobId, concept, creativesDir, styleSeed } = params;
   const job = await getJob(jobId);
   if (!job) throw new Error("Job missing");
 
@@ -121,6 +169,7 @@ async function produceOneCreative(params: {
       copy,
       brandProfile: job.brandProfile,
       companyName: job.input.companyName,
+      styleSeed: styleSeed ?? undefined,
     },
     progress,
   );

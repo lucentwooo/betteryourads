@@ -1,6 +1,7 @@
 import type { Concept, CreativeCopy, DenseNarrativePrompt, BrandProfile, VisualRegister, Track } from "../types";
 import { MODEL_REASON, runWithQA, judgeWithRubric, extractJson, createTextMessage } from "./shared";
 import { selectReferences, type ReferenceAd } from "../references/loader";
+import { renderSeedForPrompt, type AdPromptSeed } from "../style-engine/stitch";
 
 /**
  * Agent 5 — Art Director (Prompt Writer).
@@ -28,6 +29,10 @@ export async function runArtDirector(
     copy: CreativeCopy;
     brandProfile?: BrandProfile;
     companyName: string;
+    /** Optional seed from the user's saved style breakdowns. When set, the
+     * prompt writer is told to inherit palette + composition from this seed
+     * instead of leaning purely on the static reference library. */
+    styleSeed?: AdPromptSeed;
   },
   onAgentProgress?: (msg: string) => Promise<void> | void,
 ): Promise<{ register: VisualRegister; track: Track; prompt: DenseNarrativePrompt; references: ReferenceAd[] }> {
@@ -237,6 +242,10 @@ function buildPromptWriterPrompt(
     )
     .join("\n\n");
 
+  const styleSeedBlock = params.styleSeed
+    ? `\nUser's saved style guide (HIGHEST PRIORITY — palette + composition come from here, the curated references above are secondary inspiration):\n${renderSeedForPrompt(params.styleSeed)}\n`
+    : "";
+
   const brandBlock = params.brandProfile
     ? `
 Brand:
@@ -263,7 +272,7 @@ Copy that must appear (this is the source of truth — text_elements must match)
 
 Visual register: ${params.register}
 Track: ${params.track} (${params.track === "A" ? "FULL-BAKE — render all text in-image, surgical specs required" : "IMAGE-ONLY — leave text zones empty, Sharp will composite text after"})
-${brandBlock}
+${brandBlock}${styleSeedBlock}
 
 Reference ads to model structure on (replace content, keep composition + register):
 ${referenceBlock}
