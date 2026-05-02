@@ -2,17 +2,25 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, Loader2, Plus, X } from "lucide-react";
+import { ArrowRight, Check, ExternalLink, Loader2, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-type Step = "business" | "competitors" | "submitting";
+type Step = "business" | "facebook" | "competitors" | "submitting";
 type BusinessType = "saas-b2b" | "saas-b2c" | "dtc" | "service" | "other";
 
 interface CompetitorSuggestion {
   name: string;
   searchTerm: string;
+}
+
+interface FbCandidate {
+  pageId: string;
+  pageName: string;
+  matchScore: number;
+  sampleAdCount: number;
+  pageUrl: string;
 }
 
 const BUSINESS_TYPES: { value: BusinessType; label: string }[] = [
@@ -22,6 +30,8 @@ const BUSINESS_TYPES: { value: BusinessType; label: string }[] = [
   { value: "service", label: "Service / agency" },
   { value: "other", label: "Other" },
 ];
+
+const STEP_LABELS = ["Your business", "Facebook page", "Competitors", "Diagnose"];
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -34,6 +44,14 @@ export default function OnboardingPage() {
   const [icpDescription, setIcpDescription] = useState("");
   const [showOptional, setShowOptional] = useState(false);
 
+  // Facebook page verification
+  const [fbCandidates, setFbCandidates] = useState<FbCandidate[]>([]);
+  const [fbReason, setFbReason] = useState<string | null>(null);
+  const [loadingFb, setLoadingFb] = useState(false);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [savingFb, setSavingFb] = useState(false);
+  const [manualPageId, setManualPageId] = useState("");
+
   const [suggestedCompetitors, setSuggestedCompetitors] = useState<CompetitorSuggestion[]>([]);
   const [customCompetitor, setCustomCompetitor] = useState("");
   const [loadingCompetitors, setLoadingCompetitors] = useState(false);
@@ -43,24 +61,100 @@ export default function OnboardingPage() {
   async function handleBusinessSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName || !companyUrl) return;
-    setStep("competitors");
-    setLoadingCompetitors(true);
+    setStep("facebook");
+    setLoadingFb(true);
     setError(null);
+    setFbCandidates([]);
+    setFbReason(null);
     try {
-      const res = await fetch("/api/suggest-competitors", {
+      const res = await fetch("/api/brand/facebook-pages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyName, companyUrl }),
       });
       const data = await res.json();
-      setSuggestedCompetitors(data.competitors || []);
-      if (data.error) setError(data.error);
+      setFbCandidates(data.candidates || []);
+      setFbReason(data.reason || null);
+      // Pre-select the highest-confidence match if there's a clear winner.
+      const top = (data.candidates || [])[0];
+      if (top && top.matchScore >= 70) {
+        setSelectedPageId(top.pageId);
+      }
     } catch (err) {
-      setSuggestedCompetitors([]);
-      setError(err instanceof Error ? err.message : "Couldn't suggest competitors — add some manually");
+      setFbReason(err instanceof Error ? err.message : "Couldn't search Facebook pages");
     } finally {
-      setLoadingCompetitors(false);
+      setLoadingFb(false);
     }
+  }
+
+  async function handleFacebookSubmit(opts: { skip?: boolean } = {}) {
+    setSavingFb(true);
+    setError(null);
+    try {
+      const chosen = opts.skip
+        ? null
+        : fbCandidates.find((c) => c.pageId === selectedPageId);
+
+      // Always upsert the brand row at this stage so /api/analyze finds it
+      // later — even when the user skips FB verification.
+      const res = await fetch("/api/brand/save-facebook-page", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyName,
+          companyUrl,
+          businessType,
+          pageId: chosen?.pageId,
+          pageName: chosen?.pageName,
+          pageUsername: chosen?.pageName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed");
+
+      setStep("competitors");
+      setLoadingCompetitors(true);
+      // Kick off competitor suggestion in parallel with the next render.
+      try {
+        const sc = await fetch("/api/suggest-competitors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyName, companyUrl }),
+        });
+        const scData = await sc.json();
+        setSuggestedCompetitors(scData.competitors || []);
+        if (scData.error) setError(scData.error);
+      } catch (err) {
+        setSuggestedCompetitors([]);
+        setError(err instanceof Error ? err.message : "Couldn't suggest competitors — add some manually");
+      } finally {
+        setLoadingCompetitors(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingFb(false);
+    }
+  }
+
+  function handleManualPageId() {
+    const trimmed = manualPageId.trim();
+    if (!trimmed) return;
+    // Accept either a numeric page id or a facebook.com URL containing one.
+    const idMatch = trimmed.match(/(\d{6,})/);
+    const pageId = idMatch ? idMatch[1] : trimmed;
+    setFbCandidates((prev) => [
+      ...prev,
+      {
+        pageId,
+        pageName: `${companyName} (manual)`,
+        matchScore: 100,
+        sampleAdCount: 0,
+        pageUrl: `https://www.facebook.com/${pageId}`,
+      },
+    ]);
+    setSelectedPageId(pageId);
+    setManualPageId("");
   }
 
   function removeCompetitor(i: number) {
@@ -136,6 +230,24 @@ export default function OnboardingPage() {
           />
         )}
 
+        {step === "facebook" && (
+          <FacebookStep
+            companyName={companyName}
+            loading={loadingFb}
+            candidates={fbCandidates}
+            reason={fbReason}
+            selectedPageId={selectedPageId}
+            setSelectedPageId={setSelectedPageId}
+            manualPageId={manualPageId}
+            setManualPageId={setManualPageId}
+            onAddManual={handleManualPageId}
+            onContinue={() => handleFacebookSubmit()}
+            onSkip={() => handleFacebookSubmit({ skip: true })}
+            onBack={() => setStep("business")}
+            saving={savingFb}
+          />
+        )}
+
         {step === "competitors" && (
           <CompetitorsStep
             companyName={companyName}
@@ -145,7 +257,7 @@ export default function OnboardingPage() {
             setCustomCompetitor={setCustomCompetitor}
             onAdd={addCompetitor}
             onRemove={removeCompetitor}
-            onBack={() => setStep("business")}
+            onBack={() => setStep("facebook")}
             onAnalyze={handleAnalyze}
             submitting={submitting}
           />
@@ -169,14 +281,17 @@ export default function OnboardingPage() {
 }
 
 function ProgressDots({ step }: { step: Step }) {
-  const idx = step === "business" ? 0 : step === "competitors" ? 1 : 2;
+  const idx =
+    step === "business" ? 0 :
+    step === "facebook" ? 1 :
+    step === "competitors" ? 2 : 3;
   return (
-    <div className="flex items-center gap-2 text-sm text-ink/55">
-      {["Your business", "Competitors", "Diagnose"].map((label, i) => (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-ink/55">
+      {STEP_LABELS.map((label, i) => (
         <span key={label} className="flex items-center gap-2">
           <span className={`h-2 w-2 rounded-full ${i <= idx ? "bg-coral" : "bg-ink/20"}`} />
           <span className={i === idx ? "text-ink" : ""}>{label}</span>
-          {i < 2 && <span className="mx-1 text-ink/25">·</span>}
+          {i < STEP_LABELS.length - 1 && <span className="mx-1 text-ink/25">·</span>}
         </span>
       ))}
     </div>
@@ -296,6 +411,176 @@ function BusinessStep(p: {
   );
 }
 
+function FacebookStep(p: {
+  companyName: string;
+  loading: boolean;
+  candidates: FbCandidate[];
+  reason: string | null;
+  selectedPageId: string | null;
+  setSelectedPageId: (v: string | null) => void;
+  manualPageId: string;
+  setManualPageId: (v: string) => void;
+  onAddManual: () => void;
+  onContinue: () => void;
+  onSkip: () => void;
+  onBack: () => void;
+  saving: boolean;
+}) {
+  return (
+    <div className="mt-8">
+      <div className="eyebrow text-ink/55">Onboarding · 02</div>
+      <h1 className="display mt-3 text-4xl leading-[1.05]">
+        Verify your <span className="display-italic text-coral">Facebook page</span>.
+      </h1>
+      <p className="mt-3 max-w-xl text-ink/70">
+        Pick the right page once and every future scrape goes straight to it — no impostors, half the API cost.
+      </p>
+
+      <div className="mt-8 rounded-[1.3rem] border hairline bg-card p-5">
+        {p.loading ? (
+          <div className="flex items-center gap-3 rounded-xl bg-butter/60 px-4 py-3 text-sm text-ink/80">
+            <Loader2 className="h-4 w-4 animate-spin text-coral" />
+            Searching Meta Ad Library for {p.companyName}…
+          </div>
+        ) : p.candidates.length === 0 ? (
+          <div>
+            <p className="text-sm text-ink/70">
+              {p.reason ||
+                "No Facebook pages found for this brand."}
+            </p>
+            <p className="mt-3 text-sm text-ink/60">
+              Have the FB page id or URL? Paste it below to lock it in. You can find it by visiting your page on facebook.com — the id is the long number in the URL after <code className="font-mono text-ink/85">/people/</code> or <code className="font-mono text-ink/85">/pages/</code>.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Input
+                placeholder="Page id or facebook.com URL"
+                value={p.manualPageId}
+                onChange={(e) => p.setManualPageId(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    p.onAddManual();
+                  }
+                }}
+                className="h-11 rounded-xl border-hairline bg-paper"
+              />
+              <button onClick={p.onAddManual} type="button" className="btn-ghost-ink px-4">
+                <Plus className="h-4 w-4" /> Add
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-ink/60">
+              Found {p.candidates.length} Facebook page{p.candidates.length === 1 ? "" : "s"} that look related. Pick the one that&apos;s actually yours.
+            </p>
+            <ul className="mt-4 space-y-2">
+              {p.candidates.map((c) => {
+                const selected = p.selectedPageId === c.pageId;
+                return (
+                  <li key={c.pageId}>
+                    <button
+                      type="button"
+                      onClick={() => p.setSelectedPageId(c.pageId)}
+                      className={`flex w-full items-start justify-between gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                        selected
+                          ? "border-coral bg-coral/5"
+                          : "border-hairline bg-paper hover:border-ink/40"
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-ink">{c.pageName}</span>
+                          {c.matchScore === 100 && (
+                            <span className="font-mono rounded-full bg-sage/20 px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-sage">
+                              exact
+                            </span>
+                          )}
+                          {c.matchScore >= 70 && c.matchScore < 100 && (
+                            <span className="font-mono rounded-full bg-butter/60 px-2 py-0.5 text-[0.6rem] uppercase tracking-wider text-ink">
+                              strong
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[0.7rem] text-ink/55">
+                          page id {c.pageId} · {c.sampleAdCount} ad{c.sampleAdCount === 1 ? "" : "s"} in our sample
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <a
+                          href={c.pageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-1 text-xs text-ink/55 underline-offset-4 hover:text-ink hover:underline"
+                        >
+                          view <ExternalLink className="h-3 w-3" />
+                        </a>
+                        <span
+                          className={`grid h-5 w-5 place-items-center rounded-full border ${
+                            selected ? "border-coral bg-coral text-paper" : "border-ink/25"
+                          }`}
+                        >
+                          {selected && <Check className="h-3 w-3" />}
+                        </span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <details className="mt-5 text-sm text-ink/60">
+              <summary className="cursor-pointer underline-offset-4 hover:text-ink hover:underline">
+                None of these are right? Paste your page id manually
+              </summary>
+              <div className="mt-3 flex gap-2">
+                <Input
+                  placeholder="Page id or facebook.com URL"
+                  value={p.manualPageId}
+                  onChange={(e) => p.setManualPageId(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      p.onAddManual();
+                    }
+                  }}
+                  className="h-11 rounded-xl border-hairline bg-paper"
+                />
+                <button onClick={p.onAddManual} type="button" className="btn-ghost-ink px-4">
+                  <Plus className="h-4 w-4" /> Add
+                </button>
+              </div>
+            </details>
+          </>
+        )}
+      </div>
+
+      <div className="mt-6 flex items-center justify-between">
+        <button onClick={p.onBack} className="text-sm text-ink/60 underline-offset-4 hover:text-ink hover:underline">
+          ← back
+        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={p.onSkip}
+            disabled={p.saving}
+            className="text-sm text-ink/60 underline-offset-4 hover:text-ink hover:underline"
+          >
+            Skip — I&apos;ll set this later
+          </button>
+          <button
+            onClick={p.onContinue}
+            disabled={p.saving || !p.selectedPageId}
+            className="btn-chunk"
+          >
+            {p.saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Use this page <ArrowRight className="h-4 w-4" /></>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CompetitorsStep(p: {
   companyName: string;
   loading: boolean;
@@ -310,7 +595,7 @@ function CompetitorsStep(p: {
 }) {
   return (
     <div className="mt-8">
-      <div className="eyebrow text-ink/55">Onboarding · 02</div>
+      <div className="eyebrow text-ink/55">Onboarding · 03</div>
       <h1 className="display mt-3 text-4xl leading-[1.05]">
         Confirm your <span className="display-italic text-coral">competitors</span>.
       </h1>

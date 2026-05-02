@@ -368,7 +368,14 @@ async function stageCompanyAds(jobId: string): Promise<void> {
       // Hand the scraper the FB usernames found in the brand's own website,
       // so it can skip guessing and go straight to the right page.
       // maxAds=5: keep the gallery scannable, not overwhelming.
-      { hintedUsernames: job.brandFacebookUsernames, maxAds: 5 },
+      // knownPageId: when the user verified their FB page during onboarding,
+      // this short-circuits discovery entirely (saves one Apify call).
+      {
+        hintedUsernames: job.brandFacebookUsernames,
+        maxAds: 5,
+        knownPageId: job.input.knownPageId,
+        knownPageName: job.input.knownPageName,
+      },
     ),
     META_SCRAPE_TIMEOUT_MS,
     `scrapeMetaAdLibrary(${job.input.companyName})`

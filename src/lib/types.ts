@@ -209,6 +209,13 @@ export interface AnalysisInput {
   /** Supabase brand row this job is tied to. Set when /api/analyze is hit
    * by an authenticated user so the pipeline can persist results back. */
   brandId?: string;
+  /** Verified Facebook page id for the brand's own ads scrape. When set,
+   * the scraper skips its keyword-discovery pass entirely (saves one Apify
+   * call per scrape and removes impostor-page risk). Sourced from the
+   * brand row, which is populated during onboarding's "verify your
+   * Facebook page" step. */
+  knownPageId?: string;
+  knownPageName?: string;
 }
 
 export type JobStatus =

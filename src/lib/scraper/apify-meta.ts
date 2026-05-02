@@ -35,6 +35,24 @@ interface ScrapeOptions {
   countryOverride?: string;
   hintedUsernames?: string[];
   maxAds?: number;
+  /** When the user has already verified their FB page during onboarding,
+   * pass it here. We skip the keyword-discovery pass entirely (saves one
+   * Apify call per scrape) and go straight to a page-scoped pull. This
+   * also eliminates impostor-page risk — there's no fuzzy matching at all
+   * when the page id is known. */
+  knownPageId?: string;
+  knownPageName?: string;
+}
+
+export interface FacebookPageCandidate {
+  pageId: string;
+  pageName: string;
+  /** How well the FB page name matches the brand name (0-100). */
+  matchScore: number;
+  /** Number of ads attributed to this page in our discovery sample. */
+  sampleAdCount: number;
+  /** Public URL the user can click to verify "yes that's our page". */
+  pageUrl: string;
 }
 
 const DEFAULT_ACTOR = "curious_coder/facebook-ads-library-scraper";
@@ -344,36 +362,53 @@ export async function scrapeMetaAdLibraryViaApify(
 
   log(`actor=${actor} countries=[${countryAttempts.join(",")}] brand="${companyName}" hinted=${hintedUsernames.join(",") || "(none)"}`);
 
+  let pageMatch: { pageId: string; pageName: string; count: number; score: number } | null = null;
+  let pass1Items: unknown[] = [];
+  let country = detectedCountry;
+
+  // ─────────── FAST PATH: known/verified page id ───────────
+  // If the user verified their FB page during onboarding, we already have
+  // the canonical page_id. Skip discovery entirely — saves one Apify call
+  // per scrape and zero impostor-page risk.
+  if (options?.knownPageId) {
+    log(`fast-path: knownPageId=${options.knownPageId} (skipping discovery)`);
+    pageMatch = {
+      pageId: options.knownPageId,
+      pageName: options.knownPageName || companyName,
+      count: 0,
+      score: 100,
+    };
+  }
+
   // ──────────── PASS 1: discover brand's page_id via keyword search ────────────
+  // Only runs when no known page id was passed in.
   // Try hinted FB usernames first (most precise), then the brand name itself.
   const discoveryQueries = [...hintedUsernames, companyName].filter(
     (q, i, arr) => q && arr.indexOf(q) === i,
   );
 
-  let pageMatch: { pageId: string; pageName: string; count: number; score: number } | null = null;
-  let pass1Items: unknown[] = [];
-  let country = detectedCountry;
+  if (!pageMatch) {
+    outer: for (const c of countryAttempts) {
+      for (const query of discoveryQueries) {
+        log(`pass1 country=${c} keyword="${query}"`);
+        const items = await runApifyActor(
+          buildKeywordUrl(query, c),
+          MIN_COUNT,
+          token,
+          actorPath,
+          log,
+        );
+        pass1Items = items;
+        if (items.length === 0) continue;
 
-  outer: for (const c of countryAttempts) {
-    for (const query of discoveryQueries) {
-      log(`pass1 country=${c} keyword="${query}"`);
-      const items = await runApifyActor(
-        buildKeywordUrl(query, c),
-        MIN_COUNT,
-        token,
-        actorPath,
-        log,
-      );
-      pass1Items = items;
-      if (items.length === 0) continue;
-
-      pageMatch = pickBestPageMatch(items, companyName, hintedUsernames);
-      if (pageMatch) {
-        country = c;
-        log(`matched page "${pageMatch.pageName}" (id=${pageMatch.pageId}) score=${pageMatch.score} count=${pageMatch.count} country=${c}`);
-        break outer;
+        pageMatch = pickBestPageMatch(items, companyName, hintedUsernames);
+        if (pageMatch) {
+          country = c;
+          log(`matched page "${pageMatch.pageName}" (id=${pageMatch.pageId}) score=${pageMatch.score} count=${pageMatch.count} country=${c}`);
+          break outer;
+        }
+        log(`no name-match in ${items.length} items for query "${query}" country=${c}`);
       }
-      log(`no name-match in ${items.length} items for query "${query}" country=${c}`);
     }
   }
 
@@ -492,4 +527,117 @@ export async function scrapeMetaAdLibraryViaApify(
         : undefined,
     trace,
   };
+}
+
+/**
+ * Run a single keyword search against Apify and return the top FB page
+ * candidates (de-duplicated by page_id, scored by name similarity).
+ *
+ * Used by the onboarding "verify your Facebook page" step. The user picks
+ * one and we save the page_id to the brand row, so future scrapes skip
+ * discovery entirely (one Apify call instead of two).
+ *
+ * Costs one Apify run (10 charged results minimum). That's a one-time
+ * cost per onboarded brand vs paying it on every scrape.
+ */
+export async function findFacebookPageCandidates(
+  brandName: string,
+  companyUrl?: string,
+  options?: { countryOverride?: string; hintedUsernames?: string[] },
+): Promise<{ candidates: FacebookPageCandidate[]; reason?: string; trace: string[] }> {
+  const trace: string[] = [];
+  const log = (msg: string) => {
+    const line = `[${new Date().toISOString().slice(11, 19)}] ${msg}`;
+    trace.push(line);
+    console.log(`[apify-find-page] ${line}`);
+  };
+
+  let token: string;
+  try {
+    token = ensureToken();
+  } catch (err) {
+    return {
+      candidates: [],
+      reason: err instanceof Error ? err.message : "APIFY_TOKEN missing",
+      trace,
+    };
+  }
+
+  const actor = process.env.APIFY_META_ACTOR || DEFAULT_ACTOR;
+  const actorPath = actor.replace("/", "~");
+  const detectedCountry =
+    options?.countryOverride || countryFromDomain(extractDomain(companyUrl));
+  const hintedUsernames = (options?.hintedUsernames || []).filter(Boolean);
+
+  const countryAttempts = [
+    detectedCountry,
+    ...(["ALL", "AU", "US"].filter((c) => c !== detectedCountry)),
+  ];
+  const queries = [...hintedUsernames, brandName].filter(
+    (q, i, arr) => q && arr.indexOf(q) === i,
+  );
+
+  const allPages = new Map<string, { pageId: string; pageName: string; count: number }>();
+
+  // We try one query in one country at a time, but stop the moment we have
+  // at least one strong (score >= 70) candidate. This keeps the cost to
+  // one Apify run for clean cases.
+  outer: for (const c of countryAttempts) {
+    for (const q of queries) {
+      log(`probe country=${c} query="${q}"`);
+      const items = await runApifyActor(
+        buildKeywordUrl(q, c),
+        MIN_COUNT,
+        token,
+        actorPath,
+        log,
+      );
+      if (items.length === 0) continue;
+
+      for (const raw of items) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as Record<string, unknown>;
+        const pid =
+          typeof item.page_id === "string"
+            ? item.page_id
+            : typeof item.page_id === "number"
+              ? String(item.page_id)
+              : undefined;
+        const pname = typeof item.page_name === "string" ? item.page_name : undefined;
+        if (!pid || !pname) continue;
+        const existing = allPages.get(pid);
+        if (existing) existing.count++;
+        else allPages.set(pid, { pageId: pid, pageName: pname, count: 1 });
+      }
+
+      const hasStrong = [...allPages.values()].some(
+        (p) => nameMatchScore(p.pageName, brandName) >= 70,
+      );
+      if (hasStrong) break outer;
+    }
+  }
+
+  const candidates: FacebookPageCandidate[] = [...allPages.values()]
+    .map((p) => ({
+      pageId: p.pageId,
+      pageName: p.pageName,
+      matchScore: Math.max(
+        ...queries.map((q) => nameMatchScore(p.pageName, q)),
+      ),
+      sampleAdCount: p.count,
+      pageUrl: `https://www.facebook.com/${p.pageId}`,
+    }))
+    .filter((p) => p.matchScore > 0)
+    .sort((a, b) => (b.matchScore - a.matchScore) || (b.sampleAdCount - a.sampleAdCount))
+    .slice(0, 5);
+
+  if (candidates.length === 0) {
+    return {
+      candidates: [],
+      reason: `Couldn't find a Facebook page matching "${brandName}". The brand may not run Meta ads, or the FB page name is very different from the company name.`,
+      trace,
+    };
+  }
+
+  return { candidates, trace };
 }

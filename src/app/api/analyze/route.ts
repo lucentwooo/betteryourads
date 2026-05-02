@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         },
         { onConflict: "user_id" },
       )
-      .select("id")
+      .select("id, facebook_page_id, facebook_username")
       .single();
 
     if (brandErr || !brand) {
@@ -62,6 +62,10 @@ export async function POST(request: Request) {
       companyUrl: url,
       competitors: competitors || [],
       brandId: brand.id as string,
+      // If the user verified their FB page during onboarding, the scraper
+      // will skip its discovery pass and save us one Apify call per scrape.
+      knownPageId: (brand.facebook_page_id as string | null) ?? undefined,
+      knownPageName: (brand.facebook_username as string | null) ?? undefined,
       ...rest,
     };
 

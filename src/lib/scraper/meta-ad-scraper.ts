@@ -24,7 +24,13 @@ export async function scrapeMetaAdLibrary(
   outputDir: string,
   prefix: string = "company",
   companyUrl?: string,
-  options?: { countryOverride?: string; hintedUsernames?: string[]; maxAds?: number },
+  options?: {
+    countryOverride?: string;
+    hintedUsernames?: string[];
+    maxAds?: number;
+    knownPageId?: string;
+    knownPageName?: string;
+  },
 ): Promise<MetaAdResult> {
   // Apify is the default. SCRAPER_MODE=puppeteer reverts to the old
   // browser-based path while we burn in the Apify flow on real traffic.
