@@ -11,14 +11,15 @@ import { ConceptCards } from "@/components/ConceptCards";
 import { CreativeGallery } from "@/components/CreativeGallery";
 import { VocSection } from "@/components/VocSection";
 import { StatGrid } from "@/components/StatGrid";
-import { HeroTLDR } from "@/components/HeroTLDR";
-import { CollapsibleSection } from "@/components/ui/collapsible";
 import type { Job } from "@/lib/types";
 
 const SECTIONS: { id: string; num: string; label: string }[] = [
-  { id: "tldr", num: "01", label: "Verdict" },
-  { id: "concepts", num: "02", label: "The plan" },
-  { id: "deepdive", num: "03", label: "Full report" },
+  { id: "brand", num: "01", label: "Brand" },
+  { id: "ads", num: "02", label: "Your ads" },
+  { id: "rivals", num: "03", label: "Rivals" },
+  { id: "voc", num: "04", label: "Voice of Customer" },
+  { id: "diagnosis", num: "05", label: "Diagnosis" },
+  { id: "concepts", num: "06", label: "The plan" },
 ];
 
 export default function AnalyzePage() {
@@ -234,9 +235,12 @@ export default function AnalyzePage() {
           </div>
           <nav className="hidden items-center gap-6 text-sm md:flex">
             {[
-              ["tldr", "Verdict"],
-              ["concepts", "Plan"],
-              ["deepdive", "Full report"],
+              ["brand", "Brand"],
+              ["ads", "Ads"],
+              ["rivals", "Rivals"],
+              ["voc", "VoC"],
+              ["diagnosis", "Diagnosis"],
+              ["concepts", "Concepts"],
             ].map(([href, label]) => (
               <a
                 key={href}
@@ -250,151 +254,133 @@ export default function AnalyzePage() {
         </div>
       </header>
 
-      {/* Hero — 3 hard-hitting findings, no fluff. */}
-      {job.diagnosis ? (
-        <div id="tldr">
-          <HeroTLDR
-            companyName={company}
-            diagnosis={job.diagnosis}
-            completedAt={job.completedAt}
-          />
-          <div className="mx-auto max-w-6xl px-5 py-10 border-b hairline">
-            <StatGrid job={job} />
-          </div>
+      {/* Editorial masthead */}
+      <section data-reveal className="border-b hairline">
+        <div className="mx-auto max-w-6xl px-5 py-16 md:py-24">
+          <div className="eyebrow text-ink/55">A diagnosis · {new Date(job.completedAt || Date.now()).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</div>
+          <h1 className="display mt-5 max-w-4xl text-[clamp(2.5rem,6vw,5.25rem)]">
+            What’s happening with{" "}
+            <span className="display-italic text-coral">{company}</span>’s ads.
+          </h1>
+          {job.diagnosis?.tldr && (
+            <TldrInline tldr={job.diagnosis.tldr} />
+          )}
         </div>
-      ) : (
-        <section id="tldr" data-reveal className="border-b hairline">
-          <div className="mx-auto max-w-6xl px-5 py-16 md:py-24">
-            <div className="eyebrow text-ink/55">A diagnosis · {new Date(job.completedAt || Date.now()).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</div>
-            <h1 className="display mt-5 max-w-4xl text-[clamp(2.5rem,6vw,5.25rem)]">
-              What&apos;s happening with{" "}
-              <span className="display-italic text-coral">{company}</span>&apos;s ads.
-            </h1>
-          </div>
-          <div className="mx-auto max-w-6xl px-5 pb-12">
-            <StatGrid job={job} />
-          </div>
-        </section>
-      )}
 
+        {/* Stats strip, edge-to-edge, no cards */}
+        <div className="mx-auto max-w-6xl px-5 pb-12">
+          <StatGrid job={job} />
+        </div>
+      </section>
+
+      {/* Content */}
       <div className="mx-auto max-w-6xl px-5">
-        {/* The plan — ALWAYS visible. This is what they're paying for. */}
-        {job.concepts && job.concepts.length > 0 && (
-          <section id="concepts" data-reveal className="py-20 md:py-24 border-b hairline">
-            <header className="mb-10">
-              <div className="eyebrow text-ink/55">The plan</div>
-              <h2 className="display mt-3 text-[clamp(2rem,4vw,3.5rem)] leading-[1.02]">
-                Concepts, <span className="display-italic text-coral">ranked</span>.
-              </h2>
-              <p className="mt-4 max-w-2xl text-ink/65">
-                What we&apos;d actually ship next, in priority order. Approve the ones you like and we&apos;ll generate the creatives.
-              </p>
-            </header>
-            <ConceptCards
-              jobId={jobId}
-              concepts={job.concepts}
-              readOnly={job.status === "complete"}
+        {job.brandProfile && (
+          <Section
+            num="01"
+            label="Brand"
+            id="brand"
+            title="Your brand, {em}."
+            emphasis="extracted"
+            kicker="Palette, typography, and voice — pulled live from your site so every concept looks like you, not like an AI guessed."
+          >
+            <BrandBreakdown
+              brand={job.brandProfile}
+              websiteScreenshot={websiteScreenshotUrl}
             />
-          </section>
+          </Section>
         )}
 
-        {/* Generated creatives — visible if any exist */}
-        {job.creatives && job.creatives.length > 0 && (
-          <section id="creatives" data-reveal className="py-20 md:py-24 border-b hairline">
-            <header className="mb-10">
-              <div className="eyebrow text-ink/55">Creatives</div>
-              <h2 className="display mt-3 text-[clamp(2rem,4vw,3.5rem)] leading-[1.02]">
-                Your concepts, <span className="display-italic text-coral">drawn</span>.
-              </h2>
-            </header>
-            <CreativeGallery
+        <Section
+          num="02"
+          label="Your ads"
+          id="ads"
+          title="The ads you're {em}."
+          emphasis="running"
+          kicker="Every live Meta creative we could pull from the Ad Library, tagged by awareness stage."
+        >
+          <AdGallery
+            title="Your current ads"
+            subtitle="Image ads pulled from Meta Ad Library"
+            ads={job.companyAds || []}
+            jobId={jobId}
+            totalCount={job.companyAdCount}
+            videoCount={job.companyVideoCount}
+            emptyMessage="No ads found in Meta Ad Library. Either you're not running Meta ads right now, or the Library wouldn't let us in."
+          />
+        </Section>
+
+        {job.competitorData && job.competitorData.length > 0 && (
+          <Section
+            num="03"
+            label="Rivals"
+            id="rivals"
+            title="The ads they're {em} you with."
+            emphasis="beating"
+            kicker="Active creative from your real competitors — sorted, so you can see what's quietly printing money in your category."
+          >
+            <CompetitorAdGallery
+              competitors={job.competitorData}
               jobId={jobId}
-              creatives={job.creatives}
-              concepts={job.concepts || []}
             />
-          </section>
+          </Section>
         )}
 
-        {/* Deep dive — collapsed by default. The receipts. */}
-        <section id="deepdive" data-reveal className="py-20 md:py-24">
-          <header className="mb-10">
-            <div className="eyebrow text-ink/55">The receipts</div>
-            <h2 className="display mt-3 text-[clamp(2rem,4vw,3.5rem)] leading-[1.02]">
-              The full <span className="display-italic text-coral">analysis</span>.
-            </h2>
-            <p className="mt-4 max-w-2xl text-ink/65">
-              Every piece of evidence behind the verdict. Open whichever you want to dig into.
-            </p>
-          </header>
+        {job.voc && (job.voc.snippets.length > 0 || job.voc.painPoints.length > 0) && (
+          <Section
+            num="04"
+            label="Voice of Customer"
+            id="voc"
+            title="The words your customers {em} use."
+            emphasis="actually"
+            kicker="Direct quotes from Reddit, G2, Trustpilot, and niche forums. Real language, linked to real sources."
+          >
+            <VocSection voc={job.voc} />
+          </Section>
+        )}
 
-          <div className="space-y-0">
-            {job.diagnosis && (
-              <CollapsibleSection
-                eyebrow="Diagnosis"
-                title="The full read"
-                teaser="What's working, what's not, what your rivals are running, and where the gaps are."
-              >
-                <DiagnosisSection diagnosis={job.diagnosis} />
-              </CollapsibleSection>
-            )}
-
-            {job.voc && (job.voc.snippets.length > 0 || job.voc.painPoints.length > 0) && (
-              <CollapsibleSection
-                eyebrow="Voice of customer"
-                title="The words your customers actually use"
-                teaser={`${job.voc.snippets.length} quotes pulled from Reddit, reviews, and forums.`}
-              >
-                <VocSection voc={job.voc} />
-              </CollapsibleSection>
-            )}
-
-            <CollapsibleSection
-              eyebrow="Your ads"
-              title="What you're running on Meta"
-              teaser={
-                job.companyAds && job.companyAds.length > 0
-                  ? `${job.companyAds.length} image creative${job.companyAds.length === 1 ? "" : "s"} captured.`
-                  : "No image ads found in the Meta Ad Library."
-              }
-            >
-              <AdGallery
-                title="Your current ads"
-                subtitle="Image ads pulled from Meta Ad Library"
-                ads={job.companyAds || []}
-                jobId={jobId}
-                totalCount={job.companyAdCount}
-                videoCount={job.companyVideoCount}
-                emptyMessage="No ads found in Meta Ad Library. Either you're not running Meta ads right now, or the Library wouldn't let us in."
-              />
-            </CollapsibleSection>
-
-            {job.competitorData && job.competitorData.length > 0 && (
-              <CollapsibleSection
-                eyebrow="Rivals"
-                title="What your competitors are running"
-                teaser={`${job.competitorData.length} competitor${job.competitorData.length === 1 ? "" : "s"} analyzed.`}
-              >
-                <CompetitorAdGallery
-                  competitors={job.competitorData}
+        {job.diagnosis && (
+          <Section
+            num="05"
+            label="Diagnosis & the plan"
+            id="diagnosis"
+            title="What's {em}, what's not, and what to ship."
+            emphasis="working"
+            kicker="The read on your creative, the gaps your rivals are filling, and a ranked plan you can hand to your editor."
+          >
+            <DiagnosisSection diagnosis={job.diagnosis} />
+            {job.concepts && job.concepts.length > 0 && (
+              <div className="mt-24 border-t hairline pt-16">
+                <SubSectionHeader
+                  eyebrow="The plan"
+                  title="Concepts, {em}."
+                  emphasis="ranked"
+                  id="concepts"
+                />
+                <ConceptCards
                   jobId={jobId}
+                  concepts={job.concepts}
+                  readOnly={job.status === "complete"}
                 />
-              </CollapsibleSection>
+              </div>
             )}
-
-            {job.brandProfile && (
-              <CollapsibleSection
-                eyebrow="Brand"
-                title="Your brand, extracted"
-                teaser="Palette, typography, and voice — pulled live from your site."
-              >
-                <BrandBreakdown
-                  brand={job.brandProfile}
-                  websiteScreenshot={websiteScreenshotUrl}
+            {job.creatives && job.creatives.length > 0 && (
+              <div className="mt-24 border-t hairline pt-16">
+                <SubSectionHeader
+                  eyebrow="Creatives"
+                  title="Your concepts, {em}."
+                  emphasis="drawn"
+                  id="creatives"
                 />
-              </CollapsibleSection>
+                <CreativeGallery
+                  jobId={jobId}
+                  creatives={job.creatives}
+                  concepts={job.concepts || []}
+                />
+              </div>
             )}
-          </div>
-        </section>
+          </Section>
+        )}
 
         {/* Footer */}
         <footer className="mt-24 flex flex-col items-start justify-between gap-4 border-t hairline py-10 text-sm text-ink/55 md:flex-row md:items-center">
@@ -408,6 +394,45 @@ export default function AnalyzePage() {
         </footer>
       </div>
     </main>
+  );
+}
+
+/* TL;DR rendered as an editorial numbered list. Parses raw bullet input,
+   strips "---" separators and stray ** markup. */
+function TldrInline({ tldr }: { tldr: unknown }) {
+  const raw =
+    typeof tldr === "string"
+      ? tldr
+      : Array.isArray(tldr)
+      ? (tldr as unknown[]).map(String).join("\n")
+      : String(tldr ?? "");
+
+  const bullets = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .filter((l) => !/^[-*_]{2,}$/.test(l))
+    .map((l) => l.replace(/^[-*•·▸▹‣–—]\s*/, "").replace(/\*\*/g, "").trim())
+    .filter((l) => l.length > 0);
+
+  if (bullets.length === 0) return null;
+
+  return (
+    <ol className="mt-10 max-w-2xl space-y-3">
+      {bullets.map((b, i) => (
+        <li
+          key={i}
+          className="grid grid-cols-[auto_1fr] items-baseline gap-4 border-b hairline pb-3 last:border-0"
+        >
+          <span className="font-mono text-[0.7rem] uppercase tracking-[0.2em] text-coral">
+            {String(i + 1).padStart(2, "0")}
+          </span>
+          <span className="text-[1rem] leading-[1.55] text-ink/85 md:text-[1.05rem]">
+            {b}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -482,3 +507,91 @@ function ProgressRail({ activeId }: { activeId: string }) {
 
 /* Editorial section — NO bordered card, just a chapter header + breathing room.
    Optional full-bleed blush tone for emphasis sections. */
+function SubSectionHeader({
+  eyebrow,
+  title,
+  emphasis,
+  id,
+}: {
+  eyebrow: string;
+  title: string;
+  emphasis?: string;
+  id?: string;
+}) {
+  const [before, after] = emphasis && title.includes("{em}")
+    ? title.split("{em}")
+    : [title, ""];
+  return (
+    <header id={id} className="mb-12">
+      <div className="eyebrow text-ink/55">{eyebrow}</div>
+      <h3 className="display mt-3 text-[clamp(1.75rem,3.4vw,2.75rem)] leading-[1.05] [text-wrap:balance]">
+        {before}
+        {emphasis && <span className="display-italic text-coral">{emphasis}</span>}
+        {after}
+      </h3>
+    </header>
+  );
+}
+
+function Section({
+  num,
+  label,
+  id,
+  tone = "paper",
+  title,
+  emphasis,
+  kicker,
+  children,
+}: {
+  num: string;
+  label: string;
+  id: string;
+  tone?: "paper" | "blush";
+  /** Big editorial headline. Supports a single `{em}` token replaced by `emphasis`
+   *  rendered as coral italic — matches the HowItWorks display treatment. */
+  title?: string;
+  emphasis?: string;
+  kicker?: string;
+  children: React.ReactNode;
+}) {
+  const toneWrap =
+    tone === "blush"
+      ? "relative -mx-5 bg-blush px-5 md:-mx-10 md:px-10"
+      : "";
+
+  const [before, after] = title && emphasis && title.includes("{em}")
+    ? title.split("{em}")
+    : [title ?? "", ""];
+
+  return (
+    <section id={id} data-reveal className={`py-20 md:py-28 ${toneWrap}`}>
+      <header className="mb-12 md:mb-16">
+        <div className="grid grid-cols-[auto_1fr] items-start gap-6 md:gap-10">
+          <span className="font-semibold text-6xl leading-[0.9] text-coral md:text-7xl">
+            {num}
+          </span>
+          <div className="min-w-0 border-l hairline pl-6 md:pl-10">
+            <div className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-ink/55">
+              {label}
+            </div>
+            {title && (
+              <h2 className="display mt-3 text-[clamp(2rem,4.2vw,3.75rem)] leading-[1.02] [text-wrap:balance]">
+                {before}
+                {emphasis && (
+                  <span className="display-italic text-coral">{emphasis}</span>
+                )}
+                {after}
+              </h2>
+            )}
+            {kicker && (
+              <p className="mt-5 max-w-2xl text-[1rem] leading-relaxed text-ink/65 md:text-[1.05rem]">
+                {kicker}
+              </p>
+            )}
+          </div>
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+}
