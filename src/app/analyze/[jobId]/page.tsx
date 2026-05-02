@@ -306,7 +306,7 @@ export default function AnalyzePage() {
             jobId={jobId}
             totalCount={job.companyAdCount}
             videoCount={job.companyVideoCount}
-            emptyMessage="No ads found in Meta Ad Library. Either you're not running Meta ads right now, or the Library wouldn't let us in."
+            emptyMessage="No active Meta ads found for this brand. Likely they're not running on Meta right now — many B2B brands focus their spend on LinkedIn or Google instead. The competitor breakdown below is still relevant for spotting what's working in your category."
           />
         </Section>
 

@@ -367,7 +367,8 @@ async function stageCompanyAds(jobId: string): Promise<void> {
       job.input.companyUrl,
       // Hand the scraper the FB usernames found in the brand's own website,
       // so it can skip guessing and go straight to the right page.
-      { hintedUsernames: job.brandFacebookUsernames },
+      // maxAds=5: keep the gallery scannable, not overwhelming.
+      { hintedUsernames: job.brandFacebookUsernames, maxAds: 5 },
     ),
     META_SCRAPE_TIMEOUT_MS,
     `scrapeMetaAdLibrary(${job.input.companyName})`
@@ -448,7 +449,8 @@ async function stageOneCompetitor(jobId: string): Promise<boolean> {
       adsDir,
       competitorName.toLowerCase().replace(/\s+/g, "-"),
       undefined,
-      { countryOverride: brandCountry },
+      // maxAds=3: enough variety per competitor without info overload.
+      { countryOverride: brandCountry, maxAds: 3 },
     ),
     META_SCRAPE_TIMEOUT_MS,
     `scrapeMetaAdLibrary(${competitorName})`
