@@ -4,6 +4,7 @@ import type { AdScreenshot } from "../types";
 import { putImage } from "../storage/image-store";
 import { launchBrowser } from "./browser";
 import { perplexitySearch } from "../ai/openrouter";
+import { scrapeMetaAdLibraryViaApify } from "./apify-meta";
 
 interface MetaAdResult {
   success: boolean;
@@ -25,6 +26,19 @@ export async function scrapeMetaAdLibrary(
   companyUrl?: string,
   options?: { countryOverride?: string; hintedUsernames?: string[] },
 ): Promise<MetaAdResult> {
+  // Apify is the default. SCRAPER_MODE=puppeteer reverts to the old
+  // browser-based path while we burn in the Apify flow on real traffic.
+  const mode = (process.env.SCRAPER_MODE || "apify").toLowerCase();
+  if (mode === "apify") {
+    return scrapeMetaAdLibraryViaApify(
+      companyName,
+      outputDir,
+      prefix,
+      companyUrl,
+      options,
+    );
+  }
+
   const trace: string[] = [];
   const log = (msg: string) => {
     const line = `[${new Date().toISOString().slice(11, 19)}] ${msg}`;
