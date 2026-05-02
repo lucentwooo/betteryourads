@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Loader2, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -40,34 +40,27 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (step !== "competitors" || suggestedCompetitors.length > 0 || loadingCompetitors) return;
-    let cancelled = false;
-    (async () => {
-      setLoadingCompetitors(true);
-      try {
-        const res = await fetch("/api/suggest-competitors", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ companyName, companyUrl }),
-        });
-        const data = await res.json();
-        if (!cancelled) setSuggestedCompetitors(data.competitors || []);
-      } catch {
-        if (!cancelled) setSuggestedCompetitors([]);
-      } finally {
-        if (!cancelled) setLoadingCompetitors(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [step, companyName, companyUrl, suggestedCompetitors.length, loadingCompetitors]);
-
-  function handleBusinessSubmit(e: React.FormEvent) {
+  async function handleBusinessSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!companyName || !companyUrl) return;
     setStep("competitors");
+    setLoadingCompetitors(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/suggest-competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyName, companyUrl }),
+      });
+      const data = await res.json();
+      setSuggestedCompetitors(data.competitors || []);
+      if (data.error) setError(data.error);
+    } catch (err) {
+      setSuggestedCompetitors([]);
+      setError(err instanceof Error ? err.message : "Couldn't suggest competitors — add some manually");
+    } finally {
+      setLoadingCompetitors(false);
+    }
   }
 
   function removeCompetitor(i: number) {
