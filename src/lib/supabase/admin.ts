@@ -8,11 +8,14 @@
  * NEVER import this from a client component or any code path that
  * accepts user-controlled input without a server-side authz check.
  */
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 
-let cached: ReturnType<typeof createSupabaseClient> | null = null;
+// Untyped on purpose: we don't generate Supabase types in this project,
+// so an unparameterised SupabaseClient gives us tabular `from()` access
+// without the strict-never inference that fights every insert/update.
+let cached: SupabaseClient | null = null;
 
-export function createAdminClient() {
+export function createAdminClient(): SupabaseClient {
   if (cached) return cached;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

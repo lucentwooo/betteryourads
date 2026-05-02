@@ -206,6 +206,9 @@ export interface AnalysisInput {
   adContentDescription?: string;
   uploadedScreenshots?: string[];
   testMode?: "cheap";
+  /** Supabase brand row this job is tied to. Set when /api/analyze is hit
+   * by an authenticated user so the pipeline can persist results back. */
+  brandId?: string;
 }
 
 export type JobStatus =

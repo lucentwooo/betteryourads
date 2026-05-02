@@ -1,173 +1,17 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowRight, ArrowUpRight, Check, Loader2, Plus, X } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-
-type Step = "input" | "competitors" | "submitting";
-
-interface CompetitorSuggestion {
-  name: string;
-  searchTerm: string;
-}
+import Link from "next/link";
+import { ArrowRight, ArrowUpRight, Check, X } from "lucide-react";
 
 export default function HomePage() {
-  const router = useRouter();
-  const [step, setStep] = useState<Step>("input");
-  const [demoMode, setDemoMode] = useState(false);
-  const [cheapMode, setCheapMode] = useState(false);
-
-  const [companyName, setCompanyName] = useState("");
-  const [companyUrl, setCompanyUrl] = useState("");
-  const [landingPageUrl, setLandingPageUrl] = useState("");
-  const [productDescription, setProductDescription] = useState("");
-  const [icpDescription, setIcpDescription] = useState("");
-  const [notes, setNotes] = useState("");
-  const [adContentDescription, setAdContentDescription] = useState("");
-  const [showOptional, setShowOptional] = useState(false);
-
-  const [suggestedCompetitors, setSuggestedCompetitors] = useState<CompetitorSuggestion[]>([]);
-  const [customCompetitor, setCustomCompetitor] = useState("");
-  const [loadingCompetitors, setLoadingCompetitors] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [apiError, setApiError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setDemoMode(
-      params.get("demo") === "1" ||
-        process.env.NEXT_PUBLIC_DEMO_MODE === "1"
-    );
-    setCheapMode(params.get("cheap") === "1");
-  }, []);
-
-  useEffect(() => {
-    if (!demoMode) return;
-    setCompanyName((v) => v || "Tally");
-    setCompanyUrl((v) => v || "https://tally.so");
-    setSuggestedCompetitors((v) =>
-      v.length
-        ? v
-        : [
-            { name: "Typeform", searchTerm: "Typeform" },
-            { name: "Jotform", searchTerm: "Jotform" },
-            { name: "Google Forms", searchTerm: "Google Forms" },
-          ]
-    );
-  }, [demoMode]);
-
-  async function handleInitialSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!companyName || !companyUrl) return;
-    if (demoMode) {
-      setStep("competitors");
-      return;
-    }
-    setLoadingCompetitors(true);
-    setStep("competitors");
-    try {
-      const res = await fetch("/api/suggest-competitors", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyName, companyUrl, cheap: cheapMode }),
-      });
-      const data = await res.json();
-      setSuggestedCompetitors(data.competitors || []);
-      if (data.error) setApiError(data.error);
-    } catch {
-      setSuggestedCompetitors([]);
-    } finally {
-      setLoadingCompetitors(false);
-    }
-  }
-
-  function removeCompetitor(i: number) {
-    setSuggestedCompetitors((prev) => prev.filter((_, idx) => idx !== i));
-  }
-  function addCompetitor() {
-    if (!customCompetitor.trim()) return;
-    setSuggestedCompetitors((p) => [
-      ...p,
-      { name: customCompetitor.trim(), searchTerm: customCompetitor.trim() },
-    ]);
-    setCustomCompetitor("");
-  }
-
-  async function handleAnalyze() {
-    setSubmitting(true);
-    setStep("submitting");
-    try {
-      const res = await fetch(demoMode ? "/api/mock-analyze" : "/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyName,
-          companyUrl,
-          landingPageUrl: landingPageUrl || undefined,
-          productDescription: productDescription || undefined,
-          icpDescription: icpDescription || undefined,
-          notes: notes || undefined,
-          adContentDescription: adContentDescription || undefined,
-          competitors: cheapMode
-            ? suggestedCompetitors.slice(0, 1).map((c) => c.name)
-            : suggestedCompetitors.map((c) => c.name),
-          testMode: cheapMode ? "cheap" : undefined,
-        }),
-      });
-      const data = await res.json();
-      router.push(`/analyze/${data.jobId}`);
-    } catch {
-      setSubmitting(false);
-      setStep("competitors");
-    }
-  }
-
   return (
     <main className="min-h-screen bg-paper text-ink overflow-x-hidden">
       <TopNav />
-
-      <Hero
-        step={step}
-        submitting={submitting}
-        loadingCompetitors={loadingCompetitors}
-        companyName={companyName}
-        setCompanyName={setCompanyName}
-        companyUrl={companyUrl}
-        setCompanyUrl={setCompanyUrl}
-        landingPageUrl={landingPageUrl}
-        setLandingPageUrl={setLandingPageUrl}
-        productDescription={productDescription}
-        setProductDescription={setProductDescription}
-        icpDescription={icpDescription}
-        setIcpDescription={setIcpDescription}
-        notes={notes}
-        setNotes={setNotes}
-        adContentDescription={adContentDescription}
-        setAdContentDescription={setAdContentDescription}
-        showOptional={showOptional}
-        setShowOptional={setShowOptional}
-        suggestedCompetitors={suggestedCompetitors}
-        customCompetitor={customCompetitor}
-        setCustomCompetitor={setCustomCompetitor}
-        apiError={apiError}
-        demoMode={demoMode}
-        cheapMode={cheapMode}
-        onInitialSubmit={handleInitialSubmit}
-        onAddCompetitor={addCompetitor}
-        onRemoveCompetitor={removeCompetitor}
-        onAnalyze={handleAnalyze}
-        onBack={() => setStep("input")}
-      />
-
+      <Hero />
       <TrustStrip />
       <Triptych />
       <HowItWorks />
       <SamplePeek />
       <FounderNote />
-      <FinalCta onScrollTop={() => window.scrollTo({ top: 0, behavior: "smooth" })} />
+      <FinalCta />
       <Footer />
     </main>
   );
@@ -188,10 +32,10 @@ function TopNav() {
           <a href="#sample" className="link-underline">Sample</a>
           <a href="#founder" className="link-underline">Why</a>
         </nav>
-        <a href="#start" className="btn-ghost-ink text-sm">
-          Diagnose my ads
+        <Link href="/sign-in" className="btn-ghost-ink text-sm">
+          Sign in
           <ArrowRight className="h-4 w-4" />
-        </a>
+        </Link>
       </div>
     </header>
   );
@@ -210,41 +54,15 @@ function Wordmark() {
 
 /* ───────────────────────── Hero ───────────────────────── */
 
-type HeroProps = {
-  step: Step;
-  submitting: boolean;
-  loadingCompetitors: boolean;
-  companyName: string; setCompanyName: (v: string) => void;
-  companyUrl: string; setCompanyUrl: (v: string) => void;
-  landingPageUrl: string; setLandingPageUrl: (v: string) => void;
-  productDescription: string; setProductDescription: (v: string) => void;
-  icpDescription: string; setIcpDescription: (v: string) => void;
-  notes: string; setNotes: (v: string) => void;
-  adContentDescription: string; setAdContentDescription: (v: string) => void;
-  showOptional: boolean; setShowOptional: (v: boolean) => void;
-  suggestedCompetitors: CompetitorSuggestion[];
-  customCompetitor: string; setCustomCompetitor: (v: string) => void;
-  apiError: string | null;
-  demoMode: boolean;
-  cheapMode: boolean;
-  onInitialSubmit: (e: React.FormEvent) => void;
-  onAddCompetitor: () => void;
-  onRemoveCompetitor: (i: number) => void;
-  onAnalyze: () => void;
-  onBack: () => void;
-};
-
-function Hero(props: HeroProps) {
+function Hero() {
   return (
     <section id="start" className="relative">
-      {/* soft decorative blobs */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-24 top-40 h-72 w-72 rounded-full bg-blush/60 blur-3xl" />
         <div className="absolute right-[-10%] top-[-10%] h-96 w-96 rounded-full bg-butter/70 blur-3xl" />
       </div>
 
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 pb-24 pt-16 md:grid-cols-[1.15fr_0.85fr] md:pt-24">
-        {/* LEFT */}
         <div className="relative min-w-0">
           <div className="rise rise-1 mb-6 inline-flex items-center gap-2 rounded-full border hairline bg-paper/70 px-3 py-1 text-[0.72rem] font-medium tracking-wide text-ink/70 backdrop-blur">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-coral" />
@@ -258,35 +76,27 @@ function Hero(props: HeroProps) {
           </h1>
 
           <p className="rise rise-3 mt-6 max-w-xl text-lg leading-relaxed text-ink/75">
-            Paste your URL. We pull your Meta ads, benchmark your real
-            competitors, and hand you a diagnosis plus concepts you can ship
-            this week.
+            Sign up, paste your URL once, and we learn your brand forever.
+            Diagnosis on day one. On-brand ad creatives every week after.
           </p>
 
-          {/* FORM SURFACE */}
-          <div className="rise rise-4 mt-10">
-            {props.step === "input" && (
-              <InputStep {...props} />
-            )}
-            {props.step === "competitors" && (
-              <CompetitorsStep {...props} />
-            )}
-            {props.step === "submitting" && (
-              <div className="flex items-center gap-3 rounded-2xl border hairline bg-card px-5 py-4 text-sm text-ink/70">
-                <Loader2 className="h-4 w-4 animate-spin text-coral" />
-                Starting analysis…
-              </div>
-            )}
+          <div className="rise rise-4 mt-10 flex flex-wrap items-center gap-4">
+            <Link href="/sign-up" className="btn-chunk">
+              Get started — free
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link href="/sign-in" className="text-sm text-ink/60 underline-offset-4 hover:text-ink hover:underline">
+              I already have an account
+            </Link>
           </div>
 
           <div className="rise rise-5 mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink/60">
             <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-sage" /> ~90 sec diagnosis</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-sage" /> No sign-up to start</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-sage" /> Built by a founder</span>
+            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-sage" /> Free for first 5 founders</span>
+            <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-sage" /> No credit card</span>
           </div>
         </div>
 
-        {/* RIGHT — product card */}
         <div className="relative hidden md:block">
           <MarkerSticker className="absolute -left-4 -top-4 z-20">
             your brand, extracted live ↘
@@ -322,222 +132,11 @@ function MarkerSticker({
   );
 }
 
-/* ─── Form: Step 1 — Input ─── */
-
-function InputStep(p: HeroProps) {
-  return (
-    <form onSubmit={p.onInitialSubmit} className="rounded-[1.3rem] border hairline bg-card p-4 shadow-[0_1px_0_rgba(26,25,21,0.04),0_12px_30px_-12px_rgba(26,25,21,0.15)]">
-      <div className="flex flex-col gap-3 md:flex-row">
-        <div className="flex-1">
-          <Label htmlFor="companyName" className="eyebrow text-ink/50">Company</Label>
-          <Input
-            id="companyName"
-            placeholder="Tally"
-            value={p.companyName}
-            onChange={(e) => p.setCompanyName(e.target.value)}
-            required
-            className="mt-1 h-11 rounded-xl border-hairline bg-paper text-base"
-          />
-        </div>
-        <div className="flex-[1.3]">
-          <Label htmlFor="companyUrl" className="eyebrow text-ink/50">Website</Label>
-          <Input
-            id="companyUrl"
-            placeholder="tally.so"
-            value={p.companyUrl}
-            onChange={(e) => p.setCompanyUrl(e.target.value)}
-            required
-            className="mt-1 h-11 rounded-xl border-hairline bg-paper text-base"
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-col items-stretch gap-3 md:flex-row md:items-center md:justify-between">
-        <button
-          type="button"
-          onClick={() => p.setShowOptional(!p.showOptional)}
-          className="text-left text-sm text-ink/60 underline-offset-4 hover:text-ink hover:underline"
-        >
-          {p.showOptional ? "Hide" : "Add"} context about your product & ads (optional)
-        </button>
-        <button type="submit" className="btn-chunk justify-center">
-          Diagnose my ads
-          <ArrowRight className="h-4 w-4" />
-        </button>
-      </div>
-
-      {p.showOptional && (
-        <div className="mt-5 grid gap-4 border-t hairline pt-5">
-          <Field label="Landing page URL (if different)">
-            <Input
-              value={p.landingPageUrl}
-              onChange={(e) => p.setLandingPageUrl(e.target.value)}
-              placeholder="tally.so/pricing"
-              className="h-11 rounded-xl border-hairline bg-paper text-base"
-            />
-          </Field>
-          <Field label="What does the product do?">
-            <Textarea
-              value={p.productDescription}
-              onChange={(e) => p.setProductDescription(e.target.value)}
-              rows={3}
-              placeholder="Brief description of the product and its core value prop…"
-              className="rounded-xl border-hairline bg-paper"
-            />
-          </Field>
-          <Field label="Who is the target customer?">
-            <Textarea
-              value={p.icpDescription}
-              onChange={(e) => p.setIcpDescription(e.target.value)}
-              rows={3}
-              placeholder="e.g. Startup founders running Meta ads who need help deciding what to test next…"
-              className="rounded-xl border-hairline bg-paper"
-            />
-          </Field>
-          <Field
-            label="Describe your video ads"
-            hint="We can only read captions, not video content. Give us your top hooks/scenes so the analysis hits the real creative."
-          >
-            <Textarea
-              value={p.adContentDescription}
-              onChange={(e) => p.setAdContentDescription(e.target.value)}
-              rows={4}
-              placeholder="e.g. POV videos during interviews. Top hook: 'I used AI to cheat my way into Big Tech.'"
-              className="rounded-xl border-hairline bg-paper"
-            />
-          </Field>
-          <Field label="Anything else we should know?">
-            <Textarea
-              value={p.notes}
-              onChange={(e) => p.setNotes(e.target.value)}
-              rows={3}
-              placeholder="e.g. We're getting clicks but no conversions, CPA rising…"
-              className="rounded-xl border-hairline bg-paper"
-            />
-          </Field>
-        </div>
-      )}
-    </form>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <Label className="eyebrow text-ink/50">{label}</Label>
-      {hint && <p className="text-xs text-ink/55">{hint}</p>}
-      {children}
-    </div>
-  );
-}
-
-/* ─── Form: Step 2 — Competitors ─── */
-
-function CompetitorsStep(p: HeroProps) {
-  return (
-    <div className="rounded-[1.3rem] border hairline bg-card p-5 shadow-[0_1px_0_rgba(26,25,21,0.04),0_12px_30px_-12px_rgba(26,25,21,0.15)]">
-      <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <h3 className="font-semibold text-xl text-ink">Confirm your competitors</h3>
-          <p className="mt-1 text-sm text-ink/60">
-            We’ll pull their Meta ads too. Remove any that aren’t relevant, add your own.
-          </p>
-        </div>
-        <button onClick={p.onBack} className="text-sm text-ink/60 underline-offset-4 hover:text-ink hover:underline">
-          ← back
-        </button>
-      </div>
-
-      {p.loadingCompetitors ? (
-        <div className="mt-6 flex items-center gap-3 rounded-xl bg-butter/60 px-4 py-3 text-sm text-ink/80">
-          <Loader2 className="h-4 w-4 animate-spin text-coral" />
-          Analysing {p.companyName} to suggest competitors…
-        </div>
-      ) : (
-        <>
-          {p.apiError && (
-            <div className="mt-4 rounded-xl border border-coral/40 bg-coral/10 px-3 py-2 text-sm text-ink/80">
-              {p.apiError}
-            </div>
-          )}
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {p.suggestedCompetitors.map((c, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-2 rounded-full border hairline bg-paper px-3 py-1.5 text-sm text-ink"
-              >
-                {c.name}
-                <button
-                  onClick={() => p.onRemoveCompetitor(i)}
-                  className="grid h-4 w-4 place-items-center rounded-full text-ink/50 hover:bg-ink hover:text-paper"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-            {p.suggestedCompetitors.length === 0 && (
-              <p className="text-sm text-ink/50">No competitors suggested. Add some below.</p>
-            )}
-          </div>
-
-          <div className="mt-4 flex gap-2">
-            <Input
-              placeholder="Add a competitor…"
-              value={p.customCompetitor}
-              onChange={(e) => p.setCustomCompetitor(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  p.onAddCompetitor();
-                }
-              }}
-              className="h-11 rounded-xl border-hairline bg-paper"
-            />
-            <button onClick={p.onAddCompetitor} type="button" className="btn-ghost-ink px-4">
-              <Plus className="h-4 w-4" /> Add
-            </button>
-          </div>
-
-          <div className="mt-6 flex justify-end">
-            <button
-              className="btn-chunk"
-              onClick={p.onAnalyze}
-              disabled={p.submitting}
-            >
-              {p.submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Starting…
-                </>
-              ) : (
-                <>
-                  {p.demoMode ? "Run demo analysis" : p.cheapMode ? "Run cheap test" : "Run full analysis"}
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 /* ─── Product Preview Card ─── */
 
 function ProductPreviewCard() {
   return (
     <div className="relative rounded-[1.6rem] border-[1.5px] border-ink bg-paper p-4 shadow-[10px_14px_0_-2px_var(--ink)]">
-      {/* window chrome */}
       <div className="flex items-center gap-1.5 pb-3">
         <span className="h-2.5 w-2.5 rounded-full bg-coral/80" />
         <span className="h-2.5 w-2.5 rounded-full bg-butter" />
@@ -548,20 +147,17 @@ function ProductPreviewCard() {
       </div>
 
       <div className="rounded-[1.2rem] border hairline bg-paper p-4">
-        {/* Editorial masthead — matches the real /analyze page */}
         <div className="eyebrow text-ink/55">A diagnosis · April 23, 2026</div>
         <h3 className="display mt-2 text-[1.75rem] leading-[1.05]">
           What&apos;s happening with{" "}
           <span className="display-italic text-coral">Acme Labs</span>&apos; ads.
         </h3>
 
-        {/* Pull-quote TL;DR — the real report opens with this */}
         <p className="font-semibold mt-3 text-[0.9rem] leading-snug text-ink/85">
           Running problem-aware creative at a solution-aware audience.
           Missing most-aware entirely for 42 days.
         </p>
 
-        {/* Stats strip — mirrors real StatGrid: Active ads / Comp ads / Competitors / Brand color */}
         <dl className="mt-4 grid grid-cols-4 divide-x divide-hairline border-y hairline">
           <MiniStat value="14" label="Active ads" />
           <MiniStat value="63" label="Rival ads" />
@@ -575,7 +171,6 @@ function ProductPreviewCard() {
           </div>
         </dl>
 
-        {/* Concepts strip — stage badges match the real 5-stage model */}
         <div className="mt-4 flex items-baseline justify-between">
           <div className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-ink/50">
             06 · The plan
@@ -583,27 +178,9 @@ function ProductPreviewCard() {
           <div className="font-mono text-[0.65rem] text-ink/50">12 concepts · ranked</div>
         </div>
         <div className="mt-2 space-y-1.5">
-          <ConceptRow
-            rank="01"
-            stage="Problem"
-            title="The spreadsheet confession"
-            hook='"I tracked my Meta spend for 90 days…"'
-            tone="coral"
-          />
-          <ConceptRow
-            rank="02"
-            stage="Solution"
-            title="The founder who fired the agency"
-            hook='"$6k/mo gone. Here’s what replaced it."'
-            tone="sage"
-          />
-          <ConceptRow
-            rank="03"
-            stage="Most"
-            title="Retarget · 7-day trial, no card"
-            hook='"You viewed the pricing 3 times. Here."'
-            tone="ink"
-          />
+          <ConceptRow rank="01" stage="Problem" title="The spreadsheet confession" hook='"I tracked my Meta spend for 90 days…"' tone="coral" />
+          <ConceptRow rank="02" stage="Solution" title="The founder who fired the agency" hook='"$6k/mo gone. Here&rsquo;s what replaced it."' tone="sage" />
+          <ConceptRow rank="03" stage="Most" title="Retarget · 7-day trial, no card" hook='"You viewed the pricing 3 times. Here."' tone="ink" />
         </div>
       </div>
     </div>
@@ -991,10 +568,10 @@ function SamplePeek() {
             </div>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent via-card/70 to-card" />
             <div className="relative mt-10 flex justify-center">
-              <a href="#start" className="btn-chunk">
+              <Link href="/sign-up" className="btn-chunk">
                 See your own diagnosis
                 <ArrowRight className="h-4 w-4" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -1092,7 +669,7 @@ function FounderNote() {
 
 /* ───────────────────────── Final CTA ───────────────────────── */
 
-function FinalCta({ onScrollTop }: { onScrollTop: () => void }) {
+function FinalCta() {
   return (
     <section className="relative overflow-hidden bg-ink text-paper">
       <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.08] paper-grain" />
@@ -1109,10 +686,10 @@ function FinalCta({ onScrollTop }: { onScrollTop: () => void }) {
             </h2>
           </div>
           <div className="flex flex-col items-start gap-4 md:items-end">
-            <button onClick={onScrollTop} className="btn-chunk">
-              Diagnose my ads
+            <Link href="/sign-up" className="btn-chunk">
+              Get started — free
               <ArrowUpRight className="h-4 w-4" />
-            </button>
+            </Link>
             <span className="font-mono text-xs text-paper/50">
               ~90 sec · no credit card · founder-built
             </span>

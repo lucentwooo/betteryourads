@@ -4,6 +4,7 @@ import { runCopywriter } from "../agents/copywriter";
 import { runArtDirector } from "../agents/art-director";
 import { runImageGenerator } from "../agents/image-generator";
 import { humanizeCopy } from "../agents/humanizer";
+import { finalizeJobToSupabase } from "../persistence/finalize-job";
 import type { Creative, Concept } from "../types";
 
 /**
@@ -51,6 +52,18 @@ export async function runCreativeProduction(jobId: string): Promise<void> {
       "Creatives ready",
       `${creatives.filter((c) => c.status === "complete").length}/${creatives.length} passed QA`,
     );
+
+    // Persist the full job state to Supabase under the user's brand. Wrapped
+    // so a Supabase outage never marks the job as errored — the user still
+    // has their report from the existing Upstash flow.
+    if (job.input.brandId) {
+      try {
+        await finalizeJobToSupabase(jobId, job.input.brandId);
+      } catch (err) {
+        console.error(`[finalize] Supabase write failed for ${jobId}:`, err);
+        await addProgress(jobId, "Supabase sync failed", "Report still available — try again later");
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     await addProgress(jobId, "Generation error", msg);
