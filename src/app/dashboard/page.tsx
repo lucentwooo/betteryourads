@@ -116,7 +116,7 @@ export default async function DashboardPage() {
                   )}
                   <a
                     href="/onboarding"
-                    className="inline-flex items-center gap-1.5 text-ink/65 underline-offset-4 hover:text-ink hover:underline"
+                    className="inline-flex items-center gap-1.5 text-ink/70 underline underline-offset-4 hover:text-coral"
                   >
                     Run a new diagnosis
                   </a>
