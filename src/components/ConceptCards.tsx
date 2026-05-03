@@ -248,8 +248,15 @@ function ApprovalBtn({
 
 function StickyCTA({ approvedCount, jobId }: { approvedCount: number; jobId: string }) {
   const disabled = approvedCount === 0;
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   return (
-    <div className="sticky bottom-6 z-30">
+    <div className="sticky bottom-6 z-30 space-y-2">
+      {error && (
+        <div className="mx-auto max-w-3xl rounded-xl border-[1.5px] border-coral bg-coral/15 px-4 py-2 text-sm text-ink">
+          {error}
+        </div>
+      )}
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 rounded-2xl border-[1.5px] border-ink bg-ink px-5 py-4 text-paper shadow-[6px_8px_0_0_rgba(26,25,21,0.85)]">
         <div>
           <div className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-paper/55">
@@ -260,34 +267,42 @@ function StickyCTA({ approvedCount, jobId }: { approvedCount: number; jobId: str
           </div>
         </div>
         <button
-          disabled={disabled}
+          disabled={disabled || busy}
           onClick={async () => {
-            if (disabled) return;
-            // First-time gate: if the user hasn't done the style quiz yet,
-            // route them through it before generating. The quiz returns
-            // here via ?next=. Fail-open if the status check errors so a
-            // flaky network never blocks generation.
+            if (disabled || busy) return;
+            setBusy(true);
+            setError(null);
             try {
-              const statusRes = await fetch("/api/style-references/status");
-              if (statusRes.ok) {
-                const data = (await statusRes.json()) as {
-                  count?: number;
-                  hasBrand?: boolean;
-                };
-                if (data.hasBrand && (data.count ?? 0) === 0) {
-                  const next = encodeURIComponent(`/analyze/${jobId}`);
-                  window.location.href = `/onboarding/style-quiz?next=${next}`;
-                  return;
+              // First-time gate: if the user hasn't done the style quiz yet,
+              // route them through it before generating.
+              try {
+                const statusRes = await fetch("/api/style-references/status");
+                if (statusRes.ok) {
+                  const data = (await statusRes.json()) as {
+                    count?: number;
+                    hasBrand?: boolean;
+                  };
+                  if (data.hasBrand && (data.count ?? 0) === 0) {
+                    const next = encodeURIComponent(`/analyze/${jobId}`);
+                    window.location.href = `/onboarding/style-quiz?next=${next}`;
+                    return;
+                  }
                 }
+              } catch {
+                /* fail open — flaky status check shouldn't block generation */
               }
-            } catch {
-              /* fail open */
+              const res = await fetch(`/api/jobs/${jobId}/generate`, { method: "POST" });
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({} as { error?: string }));
+                setError(data.error || `Couldn't start generation (${res.status})`);
+              }
+            } finally {
+              setBusy(false);
             }
-            await fetch(`/api/jobs/${jobId}/generate`, { method: "POST" }).catch(() => {});
           }}
           className="inline-flex items-center gap-2 rounded-xl bg-coral px-5 py-3 font-semibold text-white transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
         >
-          Generate creatives →
+          {busy ? "Starting…" : "Generate creatives →"}
         </button>
       </div>
     </div>

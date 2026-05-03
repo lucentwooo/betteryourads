@@ -322,7 +322,7 @@ async function brandFitCheck(
 
   const brandLine = brand?.tone ? `Tone: ${brand.tone}` : "";
 
-  const userPrompt = `You are a strict ad QA reviewer. Your only job is to decide whether a proposed ad scene FITS the brand and angle, or contains off-brand props that would confuse a viewer.
+  const userPrompt = `You are an ad reviewer. Your ONLY job is to spot OBVIOUSLY off-domain props that don't belong in this brand's ad. Be permissive. Stylistic choices are fine.
 
 Brand: ${companyName}
 Angle: ${concept.angle}
@@ -334,12 +334,19 @@ ${sceneSummary}
 
 Return strict JSON: {"fits": true|false, "reason": "one short sentence"}.
 
-REJECT if:
-- A prop, sport, or activity in the scene has nothing to do with the brand or angle (e.g. tennis racket on a healthcare ad, surfboard on a SaaS dashboard ad, cooking pan on an accounting ad).
-- The subject person's costume/role contradicts the brand category (e.g. an athlete when the brand sells legal services).
-- The setting is irrelevant to the angle (e.g. a beach when the angle is about office productivity).
+ONLY REJECT (fits=false) when the scene contains a CLEARLY off-domain literal prop that has nothing to do with the brand category. Examples of clear rejections:
+- Tennis racket / sports equipment on a healthcare or fintech ad
+- A pizza or cooked food on a software ad
+- A surfboard or beach toy on an accounting or SaaS ad
+- A pet/animal as the focal subject when the brand sells professional services
 
-ACCEPT if every visible prop, person, and setting is plausibly part of the brand's product world or the angle's message. Stylistic borrowing of palette/composition is fine — it's only literal off-domain props that fail.
+ACCEPT (fits=true) in all other cases, including:
+- Stylistic palette/composition borrowed from another brand (this is intentional)
+- Settings that set a mood (office, kitchen, outdoor, urban) — these are fine even if not literally the product
+- Lifestyle imagery, professional people, abstract scenes
+- Anything where you have to squint or argue to call it off-domain — default to ACCEPT
+
+When in doubt, fits=true. Only reject when the off-domain prop is literally unmistakable.
 
 Return JSON only.`;
 
