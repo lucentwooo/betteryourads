@@ -5,38 +5,33 @@ import { runArtDirector } from "../agents/art-director";
 import { runImageGenerator } from "../agents/image-generator";
 import { humanizeCopy } from "../agents/humanizer";
 import { finalizeJobToSupabase } from "../persistence/finalize-job";
-import { stitchBreakdowns, type AdPromptSeed } from "../style-engine/stitch";
-import { validateBreakdown } from "../style-engine/schema";
 import { createAdminClient } from "../supabase/admin";
 import type { Creative, Concept } from "../types";
 
 /**
- * Load the user's saved style references and stitch them into N seeds —
- * one per concept. Returns null if the user has no style refs (the art
- * director then falls back to the curated reference library).
+ * Resolve the brand's business_type from the job (preferred — set by
+ * /api/analyze on submit) or, as a fallback, by reading the brands row.
+ * Threaded through to the art director so prompt writing filters every
+ * prop / subject / setting through the brand's actual product domain.
  */
-async function loadStyleSeeds(
+async function resolveBusinessType(
+  jobInputType: string | undefined,
   brandId: string | undefined,
-  count: number,
-): Promise<AdPromptSeed[] | null> {
-  if (!brandId || count <= 0) return null;
+): Promise<string | undefined> {
+  if (jobInputType) return jobInputType;
+  if (!brandId) return undefined;
   try {
     const admin = createAdminClient();
     const { data } = await admin
-      .from("style_references")
-      .select("breakdown")
-      .eq("brand_id", brandId)
-      .order("loved_at", { ascending: false })
-      .limit(8);
-    const rows = (data as Array<{ breakdown: unknown }> | null) ?? [];
-    const breakdowns = rows
-      .map((r) => validateBreakdown(r.breakdown))
-      .filter((b): b is NonNullable<ReturnType<typeof validateBreakdown>> => !!b);
-    if (breakdowns.length === 0) return null;
-    return stitchBreakdowns(breakdowns, count);
+      .from("brands")
+      .select("business_type")
+      .eq("id", brandId)
+      .maybeSingle();
+    const bt = (data as { business_type?: string | null } | null)?.business_type;
+    return bt || undefined;
   } catch (err) {
-    console.error("[generator] loadStyleSeeds failed:", err);
-    return null;
+    console.error("[generator] resolveBusinessType failed:", err);
+    return undefined;
   }
 }
 
@@ -67,17 +62,12 @@ export async function runCreativeProduction(jobId: string): Promise<void> {
     const jobDir = getJobDir(jobId);
     const creativesDir = path.join(jobDir, "creatives");
 
-    // Load the user's saved style breakdowns and stitch one seed per
-    // concept. When present, each concept gets a different structural DNA
-    // so the generated set inherits visible variety from the loved refs.
-    const styleSeeds = await loadStyleSeeds(job.input.brandId, approved.length);
-    if (styleSeeds) {
-      await addProgress(
-        jobId,
-        "Style guide loaded",
-        `Stitched ${styleSeeds.length} seed${styleSeeds.length === 1 ? "" : "s"} from saved references`,
-      );
-    }
+    // Load business_type once so the art director can scope prop and subject
+    // choices to the brand's product domain.
+    const businessType = await resolveBusinessType(
+      job.input.businessType,
+      job.input.brandId,
+    );
 
     const creatives: Creative[] = [];
     for (let i = 0; i < approved.length; i++) {
@@ -86,7 +76,7 @@ export async function runCreativeProduction(jobId: string): Promise<void> {
         jobId,
         concept,
         creativesDir,
-        styleSeed: styleSeeds?.[i] ?? null,
+        businessType,
       });
       creatives.push(creative);
       // Persist incrementally so the UI can show creatives as they land
@@ -123,9 +113,9 @@ async function produceOneCreative(params: {
   jobId: string;
   concept: Concept;
   creativesDir: string;
-  styleSeed: AdPromptSeed | null;
+  businessType?: string;
 }): Promise<Creative> {
-  const { jobId, concept, creativesDir, styleSeed } = params;
+  const { jobId, concept, creativesDir, businessType } = params;
   const job = await getJob(jobId);
   if (!job) throw new Error("Job missing");
 
@@ -169,7 +159,7 @@ async function produceOneCreative(params: {
       copy,
       brandProfile: job.brandProfile,
       companyName: job.input.companyName,
-      styleSeed: styleSeed ?? undefined,
+      businessType,
     },
     progress,
   );

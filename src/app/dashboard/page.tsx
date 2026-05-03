@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ArrowRight, Check, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -30,27 +30,17 @@ export default async function DashboardPage() {
     .maybeSingle();
   const brand = brandData as BrandRow | null;
 
-  // Latest report + style-ref count are on dependent tables. Fetch via
-  // admin (RLS still implicitly bounded by the brand_id we control).
   let latestReport: ReportRow | null = null;
-  let styleRefCount = 0;
   if (brand) {
     const admin = createAdminClient();
-    const [{ data: reportData }, { count: refCount }] = await Promise.all([
-      admin
-        .from("reports")
-        .select("job_id, created_at")
-        .eq("brand_id", brand.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      admin
-        .from("style_references")
-        .select("id", { count: "exact", head: true })
-        .eq("brand_id", brand.id),
-    ]);
+    const { data: reportData } = await admin
+      .from("reports")
+      .select("job_id, created_at")
+      .eq("brand_id", brand.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     latestReport = reportData as ReportRow | null;
-    styleRefCount = refCount ?? 0;
   }
 
   const firstName = (user.email ?? "founder").split("@")[0];
@@ -121,49 +111,6 @@ export default async function DashboardPage() {
                     Run a new diagnosis
                   </a>
                 </div>
-              </div>
-
-              {/* Style quiz status */}
-              <div className="rounded-[1.3rem] border hairline bg-card p-6">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-coral" />
-                  <div className="eyebrow text-ink/55">Style</div>
-                </div>
-                {styleRefCount === 0 ? (
-                  <>
-                    <div className="mt-2 font-semibold text-lg">
-                      Teach us your visual style.
-                    </div>
-                    <p className="mt-1 text-sm text-ink/65">
-                      Pick the ads that feel like you. We learn the palette,
-                      composition, and typography — and bake it into every future
-                      creative.
-                    </p>
-                    <a
-                      href={`/onboarding/style-quiz?next=${encodeURIComponent("/dashboard")}`}
-                      className="btn-chunk mt-5 inline-flex"
-                    >
-                      Start the style quiz <ArrowRight className="h-4 w-4" />
-                    </a>
-                  </>
-                ) : (
-                  <>
-                    <div className="mt-2 flex items-center gap-2 font-semibold text-lg">
-                      <Check className="h-5 w-5 text-sage" />
-                      Style locked in.
-                    </div>
-                    <p className="mt-1 text-sm text-ink/65">
-                      {styleRefCount} reference{styleRefCount === 1 ? "" : "s"}{" "}
-                      saved. Every future ad inherits this DNA.
-                    </p>
-                    <a
-                      href={`/onboarding/style-quiz?next=${encodeURIComponent("/dashboard")}`}
-                      className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink/65 underline underline-offset-4 hover:text-ink"
-                    >
-                      Retake the quiz
-                    </a>
-                  </>
-                )}
               </div>
 
               {/* Generate-on-demand placeholder — Phase 5 */}

@@ -209,6 +209,10 @@ export interface AnalysisInput {
   /** Supabase brand row this job is tied to. Set when /api/analyze is hit
    * by an authenticated user so the pipeline can persist results back. */
   brandId?: string;
+  /** Business type from onboarding (saas-b2b, dtc, healthcare, etc).
+   * Threaded through to the art director so prompt writing filters every
+   * prop / subject / setting through the brand's actual product domain. */
+  businessType?: string;
   /** Verified Facebook page id for the brand's own ads scrape. When set,
    * the scraper skips its keyword-discovery pass entirely (saves one Apify
    * call per scrape and removes impostor-page risk). Sourced from the

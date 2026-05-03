@@ -1,8 +1,72 @@
 import type { Concept, CreativeCopy, DenseNarrativePrompt, BrandProfile, VisualRegister, Track } from "../types";
 import { MODEL_REASON, runWithQA, judgeWithRubric, extractJson, createTextMessage } from "./shared";
 import { selectReferences, type ReferenceAd } from "../references/loader";
-import { renderSeedForPrompt, type AdPromptSeed } from "../style-engine/stitch";
 import { chatText } from "../ai/openrouter";
+
+/* ───────── Business-type domain hints ─────────
+ * Each business type maps to a short product-domain description plus a
+ * must-not-have list that the prompt writer is told to filter every prop,
+ * subject, and setting through. This is the primary lever against the
+ * "tennis racket on a healthcare ad" failure mode — domain coherence is
+ * enforced at write-time, not just caught after the fact by QA. */
+
+const DOMAIN_HINTS: Record<
+  string,
+  { domain: string; nativeProps: string; mustNotHave: string }
+> = {
+  "saas-b2b": {
+    domain: "B2B SaaS — software bought by professionals to run their work",
+    nativeProps:
+      "laptop screens, dashboards, charts, app UI mockups, professionals at desks, teams in offices, clean product screenshots",
+    mustNotHave:
+      "consumer goods, food, sports equipment, pets, beach scenes, party imagery, lifestyle wellness props (powder pouches, supplements)",
+  },
+  "saas-b2c": {
+    domain: "Consumer SaaS — software bought by individuals for their own use",
+    nativeProps:
+      "phone screens, app UI, individuals using the product on a device, simple lifestyle settings tied to the app's purpose",
+    mustNotHave:
+      "B2B enterprise imagery (boardrooms, suits), industrial equipment, sports gear unrelated to the app, food unless the app is food-related",
+  },
+  dtc: {
+    domain:
+      "DTC / consumer e-commerce — physical goods sold direct to the customer",
+    nativeProps:
+      "the product itself as hero, packaging, lifestyle imagery showing the product in use, clean studio shots",
+    mustNotHave:
+      "software UI, generic stock office imagery, props from unrelated product categories",
+  },
+  service: {
+    domain: "Service / agency — expert work delivered to a client",
+    nativeProps:
+      "professionals in their environment, deliverables (reports, strategy docs, results), client-meeting imagery",
+    mustNotHave:
+      "consumer goods, food, sports equipment, pets unrelated to the service",
+  },
+  healthcare: {
+    domain: "Healthcare — clinical or medical service",
+    nativeProps:
+      "doctors, clinicians, scrubs, hospital/clinic environments, medical equipment, charts and clinical UI",
+    mustNotHave:
+      "sports equipment, pets, food, beach/vacation imagery, casual lifestyle props",
+  },
+};
+
+function domainHintFor(businessType?: string): string {
+  if (!businessType) return "";
+  const key = businessType.toLowerCase().trim();
+  const hint = DOMAIN_HINTS[key];
+  if (!hint) {
+    // Generic fallback when the business_type is something we don't have
+    // a curated entry for — still tells the model to filter through the
+    // brand's actual product domain.
+    return `Brand domain: ${businessType}. Every prop, subject, and setting must be obviously native to this domain. References are for COMPOSITION and PALETTE only — never copy literal props from them.`;
+  }
+  return `Brand domain: ${hint.domain}.
+Native props/subjects/settings for this domain: ${hint.nativeProps}.
+Must NOT include: ${hint.mustNotHave}.
+References are for COMPOSITION and PALETTE only — never copy literal props or subjects from them.`;
+}
 
 /**
  * Agent 5 — Art Director (Prompt Writer).
@@ -30,10 +94,11 @@ export async function runArtDirector(
     copy: CreativeCopy;
     brandProfile?: BrandProfile;
     companyName: string;
-    /** Optional seed from the user's saved style breakdowns. When set, the
-     * prompt writer is told to inherit palette + composition from this seed
-     * instead of leaning purely on the static reference library. */
-    styleSeed?: AdPromptSeed;
+    /** Brand's business type (saas-b2b, dtc, healthcare, etc). When set,
+     * the prompt writer is told to filter every prop, subject, and setting
+     * through this domain — the primary defence against off-domain drift
+     * from static references (e.g. AG1 lifestyle props on a healthcare ad). */
+    businessType?: string;
   },
   onAgentProgress?: (msg: string) => Promise<void> | void,
 ): Promise<{ register: VisualRegister; track: Track; prompt: DenseNarrativePrompt; references: ReferenceAd[] }> {
@@ -90,6 +155,7 @@ export async function runArtDirector(
         brand: params.brandProfile,
         companyName: params.companyName,
         concept: params.concept,
+        businessType: params.businessType,
       }),
     onAttempt: async (attempt, outcome, q) => {
       await onAgentProgress?.(
@@ -150,7 +216,7 @@ Return:
 
 async function promptQA(
   p: DenseNarrativePrompt,
-  ctx: { brand?: BrandProfile; companyName?: string; concept?: Concept },
+  ctx: { brand?: BrandProfile; companyName?: string; concept?: Concept; businessType?: string },
 ) {
   const hardFails: string[] = [];
   const raw = p.raw || {};
@@ -186,7 +252,7 @@ async function promptQA(
   // when stylistic references (e.g. AG1 wellness lifestyle) bleed into a
   // brand they don't belong to (e.g. tennis racket on a healthcare ad).
   if (ctx.companyName && ctx.concept) {
-    const fit = await brandFitCheck(raw, ctx.companyName, ctx.concept, brand);
+    const fit = await brandFitCheck(raw, ctx.companyName, ctx.concept, brand, ctx.businessType);
     if (!fit.fits) {
       hardFails.push(`off-brand: ${fit.reason}`);
     }
@@ -226,6 +292,7 @@ HARD RULES:
 4. For Track A: specify EVERY visible text element with position, font weight, size, and color. Headline must be clearly the dominant element.
 5. For Track B: keep text zones as negative space — no text to be rendered by the model.
 6. negative_prompt includes baseline ("no gibberish text, no distorted faces, no tiny text, no watermarks") plus ad-specific rejections.
+7. DOMAIN COHERENCE — every visible prop, subject, and environment element must be obviously native to the brand's product domain (provided in the brief). References below are for COMPOSITION and PALETTE only — never copy literal props, subjects, or settings from them. If a reference shows a tennis player but the brand sells healthcare software, take the framing and lighting, not the racket. Add the brief's "must NOT include" items to negative_prompt verbatim.
 
 OUTPUT: JSON only. Shape:
 {
@@ -262,9 +329,8 @@ function buildPromptWriterPrompt(
     )
     .join("\n\n");
 
-  const styleSeedBlock = params.styleSeed
-    ? `\nUser's saved style guide (HIGHEST PRIORITY — palette + composition come from here, the curated references above are secondary inspiration):\n${renderSeedForPrompt(params.styleSeed)}\n`
-    : "";
+  const domainHint = domainHintFor(params.businessType);
+  const domainBlock = domainHint ? `\nDOMAIN (HIGHEST PRIORITY — read before anything else):\n${domainHint}\n` : "";
 
   const brandBlock = params.brandProfile
     ? `
@@ -280,7 +346,7 @@ Brand:
     : "";
 
   return `Write a Dense Narrative JSON prompt for this ad.
-
+${domainBlock}
 Concept: ${params.concept.name} — ${params.concept.awarenessStage} stage, ${params.concept.framework}
 Angle: ${params.concept.angle}
 
@@ -292,9 +358,9 @@ Copy that must appear (this is the source of truth — text_elements must match)
 
 Visual register: ${params.register}
 Track: ${params.track} (${params.track === "A" ? "FULL-BAKE — render all text in-image, surgical specs required" : "IMAGE-ONLY — leave text zones empty, Sharp will composite text after"})
-${brandBlock}${styleSeedBlock}
+${brandBlock}
 
-Reference ads to model structure on (replace content, keep composition + register):
+Reference ads (COMPOSITION + PALETTE only — do NOT copy props, subjects, or settings if they violate the domain rules above):
 ${referenceBlock}
 
 ${feedback ? `\nQA RETRY: ${feedback}\n` : ""}
@@ -313,6 +379,7 @@ async function brandFitCheck(
   companyName: string,
   concept: Concept,
   brand?: BrandProfile,
+  businessType?: string,
 ): Promise<{ fits: boolean; reason: string }> {
   const sceneSummary = [
     `Scene: ${String(raw.scene ?? "").slice(0, 400)}`,
@@ -321,6 +388,7 @@ async function brandFitCheck(
   ].join("\n");
 
   const brandLine = brand?.tone ? `Tone: ${brand.tone}` : "";
+  const domainLine = businessType ? `Business type: ${businessType}\nDomain rules: ${domainHintFor(businessType)}` : "";
 
   const userPrompt = `You are an ad reviewer. Your ONLY job is to spot OBVIOUSLY off-domain props that don't belong in this brand's ad. Be permissive. Stylistic choices are fine.
 
@@ -328,6 +396,7 @@ Brand: ${companyName}
 Angle: ${concept.angle}
 Awareness stage: ${concept.awarenessStage}
 ${brandLine}
+${domainLine}
 
 Proposed scene:
 ${sceneSummary}

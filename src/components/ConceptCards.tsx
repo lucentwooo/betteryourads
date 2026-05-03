@@ -273,24 +273,6 @@ function StickyCTA({ approvedCount, jobId }: { approvedCount: number; jobId: str
             setBusy(true);
             setError(null);
             try {
-              // First-time gate: if the user hasn't done the style quiz yet,
-              // route them through it before generating.
-              try {
-                const statusRes = await fetch("/api/style-references/status");
-                if (statusRes.ok) {
-                  const data = (await statusRes.json()) as {
-                    count?: number;
-                    hasBrand?: boolean;
-                  };
-                  if (data.hasBrand && (data.count ?? 0) === 0) {
-                    const next = encodeURIComponent(`/analyze/${jobId}`);
-                    window.location.href = `/onboarding/style-quiz?next=${next}`;
-                    return;
-                  }
-                }
-              } catch {
-                /* fail open — flaky status check shouldn't block generation */
-              }
               const res = await fetch(`/api/jobs/${jobId}/generate`, { method: "POST" });
               if (!res.ok) {
                 const data = await res.json().catch(() => ({} as { error?: string }));

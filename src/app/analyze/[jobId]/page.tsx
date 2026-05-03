@@ -15,11 +15,12 @@ import type { Job } from "@/lib/types";
 // (Phase 3+), the deep view is a click away. This page = the agency
 // hand-off that founders actually read.
 const SECTIONS: { id: string; num: string; label: string }[] = [
-  { id: "ads", num: "01", label: "Your ads" },
-  { id: "rivals", num: "02", label: "Rivals" },
-  { id: "diagnosis", num: "03", label: "Diagnosis" },
-  { id: "voc", num: "04", label: "Customer voice" },
-  { id: "plan", num: "05", label: "The plan" },
+  { id: "brand", num: "01", label: "Your brand" },
+  { id: "ads", num: "02", label: "Your ads" },
+  { id: "rivals", num: "03", label: "Rivals" },
+  { id: "diagnosis", num: "04", label: "Diagnosis" },
+  { id: "voc", num: "05", label: "Customer voice" },
+  { id: "plan", num: "06", label: "The plan" },
 ];
 
 export default function AnalyzePage() {
@@ -256,8 +257,26 @@ export default function AnalyzePage() {
       </section>
 
       <div className="mx-auto max-w-6xl px-5">
+        {(job.brandProfile || job.websiteScreenshot) && (
+          <Section
+            num="01"
+            label="Your brand"
+            id="brand"
+            title="What we {em} from your site."
+            emphasis="captured"
+            kicker="Colors, fonts, and the hero we used as the source of truth for every creative below."
+          >
+            <BrandPanel
+              brand={job.brandProfile}
+              screenshot={job.websiteScreenshot}
+              companyName={company}
+              companyUrl={job.input?.companyUrl}
+            />
+          </Section>
+        )}
+
         <Section
-          num="01"
+          num="02"
           label="Your ads"
           id="ads"
           title="The ads you're {em}."
@@ -277,7 +296,7 @@ export default function AnalyzePage() {
 
         {job.competitorData && job.competitorData.length > 0 && (
           <Section
-            num="02"
+            num="03"
             label="Rivals"
             id="rivals"
             title="What competitors are {em}."
@@ -296,7 +315,7 @@ export default function AnalyzePage() {
 
         {job.diagnosis && (
           <Section
-            num="03"
+            num="04"
             label="Diagnosis"
             id="diagnosis"
             title="What's actually {em}."
@@ -309,7 +328,7 @@ export default function AnalyzePage() {
 
         {topQuotes.length > 0 && (
           <Section
-            num="04"
+            num="05"
             label="Customer voice"
             id="voc"
             title="The words your customers {em} use."
@@ -338,7 +357,7 @@ export default function AnalyzePage() {
 
         {(topConcepts.length > 0 || topCreatives.length > 0) && (
           <Section
-            num="05"
+            num="06"
             label="The plan"
             id="plan"
             title="3 concepts to {em}."
@@ -380,6 +399,149 @@ export default function AnalyzePage() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function BrandPanel({
+  brand,
+  screenshot,
+  companyName,
+  companyUrl,
+}: {
+  brand?: NonNullable<Job["brandProfile"]>;
+  screenshot?: string;
+  companyName: string;
+  companyUrl?: string;
+}) {
+  const colors = brand?.colors;
+  const colorRoles: { key: keyof NonNullable<typeof colors>; label: string }[] = [
+    { key: "primary", label: "Primary" },
+    { key: "secondary", label: "Secondary" },
+    { key: "accent", label: "Accent" },
+    { key: "background", label: "Background" },
+    { key: "text", label: "Text" },
+  ];
+  const headingFont = brand?.typography?.primary;
+  const bodyFont = brand?.typography?.secondary || brand?.typography?.primary;
+  const aesthetic = brand?.visualStyle?.aesthetic;
+  const ctaShape = brand?.visualStyle?.ctaShape;
+
+  return (
+    <div className="grid gap-8 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      {/* Screenshot */}
+      <div className="rounded-[1.3rem] border hairline bg-card overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b hairline px-5 py-3">
+          <div className="min-w-0">
+            <div className="eyebrow text-ink/55">Hero captured</div>
+            <div className="mt-1 font-mono truncate text-sm text-ink/75">
+              {companyUrl || companyName}
+            </div>
+          </div>
+        </div>
+        {screenshot ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={screenshot}
+            alt={`${companyName} website hero`}
+            className="block w-full bg-paper"
+          />
+        ) : (
+          <div className="grid place-items-center bg-paper px-5 py-16 text-center text-sm text-ink/55">
+            <div>
+              <p>Screenshot couldn&apos;t be captured.</p>
+              <p className="mt-2 text-xs text-ink/45">
+                Brand colors and fonts were extracted from the raw HTML as a
+                fallback, so the diagnosis is still valid.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Colors + fonts */}
+      <div className="space-y-6">
+        {colors && (
+          <div className="rounded-[1.3rem] border hairline bg-card p-6">
+            <div className="eyebrow text-ink/55">Palette</div>
+            <ul className="mt-4 space-y-3">
+              {colorRoles.map(({ key, label }) => {
+                const hex = colors[key];
+                if (!hex) return null;
+                return (
+                  <li key={key} className="flex items-center gap-3">
+                    <span
+                      className="h-9 w-9 rounded-md border hairline"
+                      style={{ backgroundColor: hex }}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-ink/55">
+                        {label}
+                      </div>
+                      <div className="font-mono text-sm text-ink">{hex}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {(headingFont || bodyFont) && (
+          <div className="rounded-[1.3rem] border hairline bg-card p-6">
+            <div className="eyebrow text-ink/55">Typography</div>
+            <div className="mt-4 space-y-4">
+              {headingFont && (
+                <div>
+                  <div className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-ink/55">
+                    Heading
+                  </div>
+                  <div
+                    className="mt-1 text-2xl text-ink"
+                    style={{ fontFamily: `"${headingFont}", serif` }}
+                  >
+                    {headingFont}
+                  </div>
+                </div>
+              )}
+              {bodyFont && bodyFont !== headingFont && (
+                <div>
+                  <div className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-ink/55">
+                    Body
+                  </div>
+                  <div
+                    className="mt-1 text-lg text-ink"
+                    style={{ fontFamily: `"${bodyFont}", sans-serif` }}
+                  >
+                    {bodyFont}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {(aesthetic || ctaShape) && (
+          <div className="rounded-[1.3rem] border hairline bg-card p-6">
+            <div className="eyebrow text-ink/55">Style cues</div>
+            <dl className="mt-4 space-y-2 text-sm">
+              {aesthetic && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-ink/55">Aesthetic</dt>
+                  <dd className="text-ink text-right">{aesthetic}</dd>
+                </div>
+              )}
+              {ctaShape && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-ink/55">CTA shape</dt>
+                  <dd className="text-ink text-right">{ctaShape}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
