@@ -26,13 +26,14 @@ export interface WebsiteScrapResult {
 // function budget. The pipeline treats screenshot failures as recoverable
 // and falls back to plain HTML extraction.
 const SCRAPE_TIMEOUT_MS = 75_000;
-// 1800px ≈ hero + first section. Even 3500 was crashing Chromium on
-// Vercel serverless mid-screenshot ("Page.captureScreenshot: Target
-// closed"), so we clip aggressively. Brand color extraction reads from
-// dominant pixels in the visible region; 1800px is more than enough.
-// Text content (headings, body, og tags) is still pulled from the full
-// DOM, so the diagnosis isn't degraded.
-const MAX_SCREENSHOT_HEIGHT = 1800;
+// Capture height — needs to be tall enough to feel like a "real" capture
+// of the page (multiple sections), but not so tall that Chromium on
+// serverless crashes mid-screenshot. 2400px gives us hero + 1-2 follow-up
+// sections while staying under the threshold where Page.captureScreenshot
+// reliably crashes. Brand color extraction still reads from the visible
+// region; full DOM text is pulled separately so the diagnosis isn't
+// degraded.
+const MAX_SCREENSHOT_HEIGHT = 2400;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -202,17 +203,22 @@ async function scrapeWebsiteInner(
       .catch(() => {});
     await new Promise((r) => setTimeout(r, 200));
 
-    const captureHeight = 900;
-    step(`capturing 1440x${captureHeight} viewport at ${page.url()}`);
+    // Try to capture multiple sections of the page (hero + at least one
+    // follow-up) instead of just the 900px above-fold. Some marketing pages
+    // are short (one big hero), others are tall — clip to MAX_SCREENSHOT_HEIGHT
+    // and let Chromium do the rest. We use captureBeyondViewport=true here
+    // because we want pixels that are below the viewport.
+    const captureHeight = MAX_SCREENSHOT_HEIGHT;
+    step(`capturing 1440x${captureHeight} (full hero + sections) at ${page.url()}`);
 
     let buffer: Buffer;
     try {
       buffer = Buffer.from(
         await page.screenshot({
           type: "jpeg",
-          quality: 70,
+          quality: 72,
           clip: { x: 0, y: 0, width: 1440, height: captureHeight },
-          captureBeyondViewport: false,
+          captureBeyondViewport: true,
         })
       );
     } catch (e) {

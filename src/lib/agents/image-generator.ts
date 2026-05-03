@@ -80,25 +80,75 @@ export async function runImageGenerator(
 }
 
 function buildKiePromptString(creative: Creative, feedback?: string): string {
-  // Kie.ai accepts a single `prompt` string. We serialize the Dense Narrative
-  // JSON as a readable briefing — Nano Banana 2 handles long prose prompts well.
-  const raw = creative.prompt?.raw ?? {};
+  // Kie.ai accepts a single `prompt` string. We serialize the structured
+  // JSON (json-prompt-generator schema) as a readable briefing in the order
+  // the renderer attends to most: scene description first (the dense
+  // paragraph that could stand alone), then style, technical, materials,
+  // environment, composition, quality. Each section is JSON-stringified so
+  // exact text and hex codes survive the conversion.
+  const raw = (creative.prompt?.raw ?? {}) as Record<string, unknown>;
   const lines: string[] = [];
+  const get = (key: string) => raw[key];
 
-  if (raw.scene) lines.push(`Scene: ${raw.scene}`);
-  if (raw.subject) lines.push(`Subject: ${JSON.stringify(raw.subject)}`);
-  if (raw.environment) lines.push(`Environment: ${JSON.stringify(raw.environment)}`);
-  if (raw.camera) lines.push(`Camera: ${JSON.stringify(raw.camera)}`);
-  if (raw.lighting) lines.push(`Lighting: ${JSON.stringify(raw.lighting)}`);
-  if (raw.color_palette) lines.push(`Color palette: ${JSON.stringify(raw.color_palette)}`);
-  if (raw.composition) lines.push(`Composition: ${JSON.stringify(raw.composition)}`);
-  if (raw.text_elements && creative.track === "A") {
-    lines.push(`Text to render exactly: ${JSON.stringify(raw.text_elements)}`);
+  const scene = get("scene") as Record<string, unknown> | string | undefined;
+  if (scene) {
+    if (typeof scene === "string") {
+      lines.push(`Scene: ${scene}`);
+    } else {
+      const s = scene as Record<string, unknown>;
+      if (s.description) lines.push(`Scene: ${s.description}`);
+      if (s.subject) lines.push(`Subject: ${s.subject}`);
+      if (s.setting) lines.push(`Setting: ${s.setting}`);
+      if (s.action) lines.push(`Action: ${s.action}`);
+    }
   }
-  if (raw.style) lines.push(`Style: ${raw.style}`);
-  if (raw.negative_prompt || creative.prompt?.negativePrompt) {
-    lines.push(`Avoid: ${raw.negative_prompt || creative.prompt?.negativePrompt}`);
+
+  const style = get("style");
+  if (style) lines.push(`Style: ${typeof style === "string" ? style : JSON.stringify(style)}`);
+
+  const technical = get("technical");
+  if (technical) lines.push(`Technical: ${JSON.stringify(technical)}`);
+
+  const materials = get("materials");
+  if (materials && Object.keys(materials as object).length > 0) {
+    lines.push(`Materials: ${JSON.stringify(materials)}`);
   }
+
+  const environment = get("environment");
+  if (environment && Object.keys(environment as object).length > 0) {
+    lines.push(`Environment: ${JSON.stringify(environment)}`);
+  }
+
+  const composition = get("composition") as Record<string, unknown> | undefined;
+  if (composition) {
+    const compForKie: Record<string, unknown> = { ...composition };
+    if (creative.track === "B" && Array.isArray(compForKie.ui_elements)) {
+      // Track B: keep zone metadata but blank out content so the model
+      // doesn't try to render text. Sharp composites it after.
+      compForKie.ui_elements = (compForKie.ui_elements as Array<Record<string, unknown>>).map((el) => ({
+        ...el,
+        content: "reserved empty zone — do NOT render any text here",
+      }));
+    }
+    lines.push(`Composition: ${JSON.stringify(compForKie)}`);
+  }
+
+  const quality = get("quality");
+  if (quality) lines.push(`Quality: ${JSON.stringify(quality)}`);
+
+  // Legacy/back-compat — older prompts may still expose color_palette /
+  // text_elements at the top level. Surface them so we don't silently lose
+  // brand hex codes during the schema migration.
+  const palette = get("color_palette");
+  if (palette) lines.push(`Color palette: ${JSON.stringify(palette)}`);
+  const legacyText = get("text_elements");
+  if (legacyText && creative.track === "A") {
+    lines.push(`Text to render exactly: ${JSON.stringify(legacyText)}`);
+  }
+
+  const neg = (raw.negative_prompt as string | undefined) || creative.prompt?.negativePrompt;
+  if (neg) lines.push(`Avoid: ${neg}`);
+
   if (feedback) lines.push(`FIX FROM QA: ${feedback}`);
 
   return lines.join("\n");

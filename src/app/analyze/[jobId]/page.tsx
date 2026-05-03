@@ -402,6 +402,189 @@ export default function AnalyzePage() {
   );
 }
 
+type StageWeight = "over" | "under" | "neglected" | "balanced";
+
+const STAGE_DEFS: { key: string; label: string; sub: string }[] = [
+  { key: "unaware", label: "Unaware", sub: "no problem yet" },
+  { key: "problem", label: "Problem-aware", sub: "feels the pain" },
+  { key: "solution", label: "Solution-aware", sub: "scanning options" },
+  { key: "product", label: "Product-aware", sub: "comparing you vs rivals" },
+  { key: "most", label: "Most-aware", sub: "ready to convert" },
+];
+
+function classifyBullet(text: string): { stageKey: string | null; weight: StageWeight; line: string } {
+  const t = text.toLowerCase();
+  let weight: StageWeight = "balanced";
+  if (/over[- ]?represent|over[- ]?index|too much|skipping past|saturat/.test(t)) weight = "over";
+  else if (/under[- ]?represent|under[- ]?index|missing|skipping|gap|not enough|minimal|under[- ]?developed/.test(t)) weight = "under";
+  else if (/neglect|absent|no\s+(content|creative)|completely missing|untouched/.test(t)) weight = "neglected";
+
+  let stageKey: string | null = null;
+  for (const s of STAGE_DEFS) {
+    if (t.includes(s.key)) {
+      stageKey = s.key;
+      break;
+    }
+  }
+  // Tolerate variants the strategist sometimes returns
+  if (!stageKey) {
+    if (/most[- ]aware|bottom[- ]of[- ]funnel/.test(t)) stageKey = "most";
+    else if (/top[- ]of[- ]funnel/.test(t)) stageKey = "unaware";
+  }
+  return { stageKey, weight, line: text };
+}
+
+function weightStyles(w: StageWeight) {
+  switch (w) {
+    case "over":
+      return { bar: "bg-butter", dot: "bg-ink", label: "Over-represented", chipBg: "bg-butter/60", chipText: "text-ink" };
+    case "under":
+      return { bar: "bg-coral", dot: "bg-coral", label: "Under-represented", chipBg: "bg-coral/15", chipText: "text-coral" };
+    case "neglected":
+      return { bar: "bg-ink", dot: "bg-ink", label: "Neglected", chipBg: "bg-ink", chipText: "text-paper" };
+    default:
+      return { bar: "bg-sage", dot: "bg-sage", label: "Balanced", chipBg: "bg-sage/15", chipText: "text-sage" };
+  }
+}
+
+function AwarenessStageGap({ bullets }: { bullets: string[] }) {
+  const findings = bullets.map(classifyBullet);
+  const stageStatus: Record<string, StageWeight> = {};
+  for (const f of findings) {
+    if (!f.stageKey) continue;
+    // Worst-case wins (neglected > under > over > balanced)
+    const ranking: StageWeight[] = ["balanced", "over", "under", "neglected"];
+    const current = stageStatus[f.stageKey] ?? "balanced";
+    if (ranking.indexOf(f.weight) > ranking.indexOf(current)) {
+      stageStatus[f.stageKey] = f.weight;
+    }
+  }
+
+  return (
+    <div className="border-t hairline pt-10">
+      <div className="eyebrow text-ink/55">Awareness-stage gap</div>
+      <p className="mt-2 max-w-3xl text-sm text-ink/60 [text-wrap:pretty]">
+        Where your creative is hitting vs where the demand actually sits. The biggest CAC leaks live in the gap.
+      </p>
+
+      {/* Funnel strip */}
+      <ol className="mt-7 grid gap-2 md:grid-cols-5">
+        {STAGE_DEFS.map((s, i) => {
+          const w = stageStatus[s.key] ?? "balanced";
+          const sty = weightStyles(w);
+          return (
+            <li
+              key={s.key}
+              className="rounded-2xl border-[1.5px] border-ink/10 bg-paper p-4"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-ink/45">
+                  Stage {String(i + 1).padStart(2, "0")}
+                </div>
+                <span className={`grid h-2 w-2 place-items-center rounded-full ${sty.dot}`} />
+              </div>
+              <div className="font-semibold mt-2 text-sm text-ink">{s.label}</div>
+              <div className="mt-0.5 text-[0.72rem] text-ink/55">{s.sub}</div>
+              <div className={`mt-3 h-1 w-full rounded-full ${sty.bar}`} />
+              <div className={`mt-3 inline-block rounded-full px-2 py-0.5 font-mono text-[0.6rem] uppercase tracking-[0.16em] ${sty.chipBg} ${sty.chipText}`}>
+                {sty.label}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* Findings */}
+      <ul className="mt-8 space-y-3">
+        {findings.map((f, i) => {
+          const sty = weightStyles(f.weight);
+          const stageLabel = f.stageKey ? STAGE_DEFS.find((s) => s.key === f.stageKey)?.label : null;
+          return (
+            <li
+              key={i}
+              className="grid grid-cols-[auto_1fr] items-baseline gap-4 border-b hairline pb-3 last:border-0"
+            >
+              <span className={`inline-block rounded-full px-2 py-0.5 font-mono text-[0.6rem] uppercase tracking-[0.16em] ${sty.chipBg} ${sty.chipText}`}>
+                {stageLabel ? `${stageLabel} · ${sty.label}` : sty.label}
+              </span>
+              <span className="text-[0.95rem] leading-[1.55] text-ink/85 [text-wrap:pretty]">
+                {f.line}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function ExecutiveSummary({ raw }: { raw: unknown }) {
+  const text =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw)
+      ? (raw as unknown[]).map(String).join("\n")
+      : String(raw ?? "");
+
+  // The strategist often returns asterisk-bulleted prose like
+  // "* Brand voice... * Current ads...". Detect that and render as a
+  // scannable list. Otherwise fall back to prose.
+  const cleanText = text.replace(/^["“]|["”]$/g, "").trim();
+  const looksBulleted =
+    /(^|\s)\*\s/.test(cleanText) ||
+    /\n\s*[-•·]\s/.test(cleanText) ||
+    cleanText.split(/\.\s+\*/).length >= 3;
+
+  if (looksBulleted) {
+    const bullets = cleanText
+      .split(/(?:^|\s)\*\s|\n\s*[-•·]\s/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) =>
+        s
+          .replace(/\*\*(.*?)\*\*/g, "$1")
+          .replace(/\*(.*?)\*/g, "$1")
+          .replace(/^\s*[-•·]\s*/, "")
+          .trim(),
+      )
+      .filter((s) => s.length > 4);
+
+    if (bullets.length >= 2) {
+      return (
+        <div className="max-w-3xl">
+          <div className="eyebrow text-ink/55">Executive summary</div>
+          <ul className="mt-4 space-y-3">
+            {bullets.map((b, i) => (
+              <li
+                key={i}
+                className="grid grid-cols-[auto_1fr] items-baseline gap-4 border-b hairline pb-3 last:border-0"
+              >
+                <span className="font-mono text-[0.7rem] uppercase tracking-[0.2em] text-coral">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span className="text-[1rem] leading-[1.55] text-ink/85 md:text-[1.05rem] [text-wrap:pretty]">
+                  {b}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div className="relative max-w-3xl">
+      <span className="font-serif pointer-events-none absolute -left-2 -top-8 text-7xl leading-none text-coral/60 md:-left-6 md:text-8xl">
+        “
+      </span>
+      <p className="font-semibold text-[clamp(1.15rem,1.8vw,1.55rem)] leading-[1.35] text-ink [text-wrap:pretty]">
+        {cleanText}
+      </p>
+    </div>
+  );
+}
+
 function BrandPanel({
   brand,
   screenshot,
@@ -606,14 +789,7 @@ function DiagnosisGrid({
   return (
     <div className="space-y-12">
       {diagnosis.executiveSummary && (
-        <div className="relative max-w-3xl">
-          <span className="font-serif pointer-events-none absolute -left-2 -top-8 text-7xl leading-none text-coral/60 md:-left-6 md:text-8xl">
-            “
-          </span>
-          <p className="font-semibold text-[clamp(1.15rem,1.8vw,1.55rem)] leading-[1.35] text-ink">
-            {String(diagnosis.executiveSummary).replace(/^["“]|["”]$/g, "").trim()}
-          </p>
-        </div>
+        <ExecutiveSummary raw={diagnosis.executiveSummary} />
       )}
 
       <div className="grid gap-5 md:grid-cols-2">
@@ -623,27 +799,7 @@ function DiagnosisGrid({
       </div>
 
       {stage.length > 0 && (
-        <div className="border-t hairline pt-10">
-          <div className="eyebrow text-ink/55">Awareness-stage gap</div>
-          <p className="mt-2 max-w-3xl text-sm text-ink/60">
-            Where your creative is hitting vs where the demand actually sits. The biggest CAC leaks usually live in the gap between these.
-          </p>
-          <ul className="mt-6 space-y-3">
-            {stage.map((b, i) => (
-              <li
-                key={i}
-                className="grid grid-cols-[auto_1fr] items-baseline gap-4 border-b hairline pb-3 last:border-0"
-              >
-                <span className="font-mono text-[0.7rem] uppercase tracking-[0.2em] text-coral">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="text-[0.95rem] leading-[1.55] text-ink/85">
-                  {b}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <AwarenessStageGap bullets={stage} />
       )}
     </div>
   );
@@ -885,7 +1041,7 @@ function Section({
               </h2>
             )}
             {kicker && (
-              <p className="mt-5 max-w-2xl text-[1rem] leading-relaxed text-ink/65 md:text-[1.05rem]">
+              <p className="mt-5 max-w-2xl text-[1rem] leading-relaxed text-ink/65 md:text-[1.05rem] [text-wrap:pretty]">
                 {kicker}
               </p>
             )}

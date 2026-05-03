@@ -75,18 +75,10 @@ References are for COMPOSITION and PALETTE only — never copy literal props or 
  * QA enforces schema completeness, brand hex fidelity, and pattern citation.
  */
 
-const REQUIRED_FIELDS = [
-  "scene",
-  "subject",
-  "environment",
-  "camera",
-  "lighting",
-  "color_palette",
-  "composition",
-  "text_elements",
-  "style",
-  "negative_prompt",
-];
+/* The new schema mirrors the json-prompt-generator skill exactly, adapted
+ * for ads. Every field is "be specific, not generic" — the LLM is told to
+ * describe what it sees rather than reach for impressive-sounding clichés. */
+const REQUIRED_TOP_LEVEL = ["scene", "style", "technical", "composition", "quality"] as const;
 
 export async function runArtDirector(
   params: {
@@ -222,10 +214,42 @@ async function promptQA(
   const raw = p.raw || {};
   const brand = ctx.brand;
 
-  for (const f of REQUIRED_FIELDS) {
+  for (const f of REQUIRED_TOP_LEVEL) {
     if (raw[f] === undefined || raw[f] === null || raw[f] === "") {
       hardFails.push(`missing field "${f}"`);
     }
+  }
+
+  // scene.description is the most important single field — must be a real paragraph
+  const scene = (raw.scene as Record<string, unknown> | undefined) ?? {};
+  const description = typeof scene.description === "string" ? scene.description : "";
+  if (description.length < 200) {
+    hardFails.push(`scene.description too short (${description.length} chars, need >= 200)`);
+  }
+  if (/\b(natural lighting|professional photography|high quality|cinematic)\b/i.test(description) && description.length < 400) {
+    // Lazy generic phrasing without the specificity to back it up.
+    hardFails.push("scene.description leans on generic phrases ('natural lighting', 'professional photography') — be specific instead");
+  }
+
+  // technical.camera must have aperture + focal_length per the skill rules
+  const technical = (raw.technical as Record<string, unknown> | undefined) ?? {};
+  const camera = (technical.camera as Record<string, unknown> | undefined) ?? {};
+  if (!camera.focal_length || !camera.aperture) {
+    hardFails.push("technical.camera.focal_length and .aperture are required (e.g., 35mm + f/2.8)");
+  }
+
+  // quality.include + avoid + reference_standard are non-negotiable per the skill
+  const quality = (raw.quality as Record<string, unknown> | undefined) ?? {};
+  const include = Array.isArray(quality.include) ? quality.include : [];
+  const avoid = Array.isArray(quality.avoid) ? quality.avoid : [];
+  if (include.length < 6) {
+    hardFails.push(`quality.include needs 8-12 image-specific keywords (got ${include.length})`);
+  }
+  if (avoid.length < 5) {
+    hardFails.push(`quality.avoid needs 6-10 image-specific failure modes (got ${avoid.length})`);
+  }
+  if (!quality.reference_standard || typeof quality.reference_standard !== "string") {
+    hardFails.push("quality.reference_standard must cite a real photographer / publication / film / design system");
   }
 
   if (!p.negativePrompt || p.negativePrompt.length < 20) {
@@ -269,47 +293,119 @@ async function promptQA(
   }
 
   return judgeWithRubric({
-    systemPrompt: "You are a strict creative prompt reviewer for ad image generation. Reject vague, under-specified prompts.",
-    userPrompt: `Evaluate Dense Narrative prompt:
-Scene: ${String(raw.scene || "").slice(0, 300)}
-Composition: ${JSON.stringify(raw.composition || {}).slice(0, 400)}
-Color palette: ${JSON.stringify(raw.color_palette || []).slice(0, 300)}
-Text elements: ${JSON.stringify(raw.text_elements || []).slice(0, 300)}
-Patterns cited: ${p.patternsCited.join(", ")}`,
-    rubric: ["schemaCompleteness", "textSpecs", "brandFidelity", "patternCitation", "negativePromptCoverage"],
+    systemPrompt: "You are a strict creative prompt reviewer for ad image generation. Reject vague, under-specified prompts. Reward specificity (exact f-stops, named lighting directions, real-photographer references) and reject generic phrasing.",
+    userPrompt: `Evaluate the JSON prompt:
+scene.description: ${description.slice(0, 600)}
+style: ${JSON.stringify(raw.style || {}).slice(0, 400)}
+technical.camera: ${JSON.stringify(camera).slice(0, 300)}
+materials: ${JSON.stringify(raw.materials || {}).slice(0, 400)}
+composition.ui_elements: ${JSON.stringify((raw.composition as Record<string, unknown> | undefined)?.ui_elements || {}).slice(0, 400)}
+quality.include: ${JSON.stringify(include).slice(0, 300)}
+quality.avoid: ${JSON.stringify(avoid).slice(0, 300)}
+quality.reference_standard: ${quality.reference_standard ?? "(missing)"}
+patterns_cited: ${p.patternsCited.join(", ")}`,
+    rubric: ["sceneDescriptionRichness", "cameraSpecificity", "materialRealism", "uiElementsExactText", "qualityArrayPrecision", "referenceStandardCredibility"],
     passThreshold: 7,
   });
 }
 
 /* ───────── Prompts ───────── */
 
-const promptSystemPrompt = `You are an elite art director writing Dense Narrative JSON prompts for Kie.ai Nano Banana 2.
+const promptSystemPrompt = `You are an elite art director writing structured JSON prompts for Kie.ai Nano Banana 2. Your job is to produce a prompt so specific and visually grounded that the renderer cannot fall back to generic AI-photo aesthetics.
 
-HARD RULES:
-1. Every required field populated: scene, subject, environment, camera, lighting, color_palette (array of {hex, role, coverage_pct}), composition (layout_archetype, focal_points, negative_space_pct, vertical_zones), text_elements (array of {content, font, size, position, color, weight}), style, negative_prompt.
-2. Cite >= 2 patterns from the reference ad library's _patterns.md. List them in patterns_cited.
-3. Every brand hex code must appear verbatim in color_palette or elsewhere in the prompt.
-4. For Track A: specify EVERY visible text element with position, font weight, size, and color. Headline must be clearly the dominant element.
-5. For Track B: keep text zones as negative space — no text to be rendered by the model.
-6. negative_prompt includes baseline ("no gibberish text, no distorted faces, no tiny text, no watermarks") plus ad-specific rejections.
-7. DOMAIN COHERENCE — every visible prop, subject, and environment element must be obviously native to the brand's product domain (provided in the brief). References below are for COMPOSITION and PALETTE only — never copy literal props, subjects, or settings from them. If a reference shows a tennis player but the brand sells healthcare software, take the framing and lighting, not the racket. Add the brief's "must NOT include" items to negative_prompt verbatim.
+CORE PRINCIPLES (these determine quality — follow closely):
 
-OUTPUT: JSON only. Shape:
+1. BE SPECIFIC, NOT GENERIC. "Warm golden-hour sunlight raking across the subject at 15 degrees from camera-left" beats "natural lighting." "Visible pores, fine wrinkles around the eyes, slight stubble shadow on the jaw" beats "realistic skin." Precision is what makes the output usable.
+
+2. SEPARATE VISUAL ELEMENTS. Every distinct surface, person, or object gets its own description with materials, lighting interaction, and spatial relationship. Don't blur subject and setting into one paragraph.
+
+3. CAMERA SETTINGS MUST BE REALISTIC AND MATCH THE LOOK.
+   - Very blurry background → f/1.4–f/2.0
+   - Moderately soft background → f/2.8–f/4
+   - Most things sharp → f/5.6–f/8
+   - Everything sharp → f/11–f/16
+   - Compressed perspective / telephoto feel → 85mm–200mm
+   - Normal perspective → 50mm
+   - Wide / environmental → 24mm–35mm
+   - Exaggerated foreground → 16mm–24mm
+
+4. EVERY VISIBLE TEXT ELEMENT IS SPELLED OUT EXACTLY in composition.ui_elements — character-for-character, with font style, weight, colour hex, alignment, and position. Don't paraphrase headlines.
+
+5. QUALITY ARRAYS ARE NON-NEGOTIABLE. quality.include needs 8–12 keywords specific to THIS image. quality.avoid needs 6–10 failure modes specific to THIS image. quality.reference_standard cites real photographers, publications, films, or design systems whose visual language matches (e.g. "Annie Leibovitz Vanity Fair editorial portrait", "Apple Vision Pro launch keynote stills", "Linear marketing site product hero").
+
+6. OMIT IRRELEVANT SECTIONS. A studio product shot doesn't need environment.atmosphere. A landscape with no people doesn't need materials.skin. A clean software UI shot doesn't need particles. Padding with generic filler reduces quality.
+
+7. DOMAIN COHERENCE. Every prop, subject, and setting must be obviously native to the brand's product domain (provided in the brief). References are for COMPOSITION and PALETTE only — never copy literal props or subjects from them. If a reference shows a tennis player but the brand sells healthcare software, take the framing and lighting, not the racket. The brief's "must NOT include" items go into quality.avoid verbatim.
+
+8. BRAND HEX CODES appear verbatim somewhere in the prompt — typically inside scene.description and inside composition.ui_elements colour fields.
+
+9. TRACK GATING.
+   - Track A (full-bake): every visible text element is described in composition.ui_elements with exact text, font, weight, colour hex, alignment, and position. Headline is clearly the dominant element.
+   - Track B (image-only): composition.ui_elements describes empty zones reserved for text composite — no text rendered by the model.
+
+OUTPUT: a single valid JSON object. Shape (omit subsections that aren't relevant — don't pad):
+
 {
   "raw": {
-    "scene": "...",
-    "subject": {...},
-    "environment": {...},
-    "camera": {...},
-    "lighting": {...},
-    "color_palette": [{"hex": "#...", "role": "...", "coverage_pct": 30}, ...],
-    "composition": {"layout_archetype": "...", "focal_points": [...], "negative_space_pct": 30, "vertical_zones": [...]},
-    "text_elements": [{"content": "...", "font": "...", "weight": 800, "size_px": "...", "position": "...", "color_hex": "#..."}],
-    "style": "...",
-    "negative_prompt": "..."
+    "scene": {
+      "description": "ONE DENSE PARAGRAPH (4-8 sentences) that could stand alone as a complete image prompt. Covers subject, action, setting, mood, dominant colour palette (with hex codes for branded content), and ALL typography/UI elements with exact text. This is the most important field in the whole prompt.",
+      "subject": "Primary subject with specific physical details — pose, clothing, expression, object specifics",
+      "setting": "Location, environment, context, period if relevant",
+      "action": "What is happening, or 'static' with description"
+    },
+    "style": {
+      "primary": "photorealistic | cinematic | documentary | editorial | commercial | illustrated | [specific style]",
+      "rendering_quality": "hyperrealistic | detailed | high-resolution | stylized",
+      "surface_textures": "Dominant texture treatment across the scene",
+      "lighting": "Direction (e.g. 'camera-left at 30 degrees'), quality (hard/soft/diffused), colour temperature (e.g. 5600K daylight, 3200K tungsten warm), number of sources, how light interacts with the scene"
+    },
+    "technical": {
+      "camera": {
+        "focal_length": "exact mm — 24mm, 35mm, 50mm, 85mm, 100mm macro, etc.",
+        "aperture": "exact f-stop — f/1.4, f/2.0, f/2.8, f/4, f/5.6, f/8, f/11",
+        "depth_of_field": "very shallow | shallow | moderate | deep — plus what's sharp vs soft",
+        "angle": "eye level | low angle | high angle | overhead | three-quarter overhead | dutch | [specific]"
+      },
+      "resolution": "high definition | ultra high definition | cinema-grade | editorial print quality",
+      "rendering": "Shutter character, grain, colour depth, bokeh quality, post-processing look"
+    },
+    "materials": {
+      "skin": "(only if people present) Pore detail, natural imperfections, ethnicity, jewellery, facial hair",
+      "fabric": "(only if fabric present) Weave/thread patterns, drape, wear, weight",
+      "surfaces": "Each distinct surface — scratches, patina, oxidation, irregularities",
+      "transparency": "(only if transparent elements present) Refraction, glass, liquid behaviour"
+    },
+    "environment": {
+      "atmosphere": "(only if environmental) Haze, fog, humidity, volumetric light",
+      "time": "(only if environmental) Time of day, season, light mix",
+      "particles": "(only if environmental) Dust, moisture, smoke, steam"
+    },
+    "composition": {
+      "perspective": "Vanishing points, depth layering, leading lines",
+      "framing": "rule of thirds | golden ratio | centered | symmetrical | split layout | [describe]",
+      "subject_placement": "Precise positioning, visual weight distribution, eye path",
+      "ui_elements": [
+        {
+          "role": "headline | subhead | cta | body | logo | badge | label | reserved_zone",
+          "content": "EXACT text character-for-character (or 'reserved empty zone' for Track B)",
+          "font": "specific family, e.g. 'Inter Display Black' or 'serif italic display'",
+          "weight": 900,
+          "size_relative": "dominant | large | medium | small | micro",
+          "alignment": "left | center | right",
+          "position": "top-left | top-center | top-right | center | bottom-left | bottom-center | bottom-right | [precise]",
+          "color_hex": "#RRGGBB"
+        }
+      ]
+    },
+    "quality": {
+      "include": ["8-12 positive keywords specific to THIS image"],
+      "avoid": ["6-10 failure modes specific to THIS image (must include the brief's must-not-have items verbatim)"],
+      "reference_standard": "Real photographers / publications / films / design systems whose visual language matches"
+    },
+    "negative_prompt": "Final flat negative-prompt string for renderers that consume one. Concatenates the brief's must-not items + craft failure modes."
   },
-  "negative_prompt": "...",
-  "patterns_cited": ["CP-N: pattern name", ...]
+  "negative_prompt": "Same as raw.negative_prompt — surfaced at the top level for downstream serialization.",
+  "patterns_cited": ["CP-N: pattern name from the reference library", ...]
 }`;
 
 function buildPromptWriterPrompt(
@@ -345,27 +441,40 @@ Brand:
 `
     : "";
 
-  return `Write a Dense Narrative JSON prompt for this ad.
+  return `Write a structured JSON prompt for one Meta ad creative. Follow the schema and core principles in the system prompt EXACTLY. The single most important field is scene.description — write it as a dense paragraph that could stand alone as a complete image prompt.
 ${domainBlock}
 Concept: ${params.concept.name} — ${params.concept.awarenessStage} stage, ${params.concept.framework}
 Angle: ${params.concept.angle}
 
-Copy that must appear (this is the source of truth — text_elements must match):
+Copy that must appear (source of truth — composition.ui_elements must match exactly, character-for-character):
   headline: "${params.copy.headline}"
   primary: "${params.copy.primary}"
   description: "${params.copy.description}"
   cta: "${params.copy.cta}"
 
 Visual register: ${params.register}
-Track: ${params.track} (${params.track === "A" ? "FULL-BAKE — render all text in-image, surgical specs required" : "IMAGE-ONLY — leave text zones empty, Sharp will composite text after"})
+Track: ${params.track} ${
+    params.track === "A"
+      ? "(FULL-BAKE — every text element rendered in-image with exact specs in composition.ui_elements)"
+      : "(IMAGE-ONLY — composition.ui_elements describes empty reserved zones; Sharp will composite text after)"
+  }
 ${brandBlock}
 
-Reference ads (COMPOSITION + PALETTE only — do NOT copy props, subjects, or settings if they violate the domain rules above):
+Reference ads (USE FOR COMPOSITION + LIGHTING + PALETTE ONLY — never copy literal props, subjects, or settings if they violate the domain rules above):
 ${referenceBlock}
 
-${feedback ? `\nQA RETRY: ${feedback}\n` : ""}
+ANALYSIS APPROACH:
+Before you start writing the JSON, mentally answer:
+- What is the single subject the viewer's eye should land on first? Describe it with the kind of physical specificity a casting director would use.
+- What is the lighting doing? Direction, quality, colour temperature, hard or soft.
+- What camera setup matches that look? Pick aperture and focal length per the rules above.
+- What materials are visible? For each distinct surface, what makes it look real (pores, weave, scratches, patina)?
+- What real photographer / publication / film does this remind you of? That goes in quality.reference_standard.
+- What are 6-10 specific failure modes for THIS image (not generic "blurry, bad quality")? Those go in quality.avoid.
 
-Return JSON now.`;
+${feedback ? `\nQA RETRY — fix this: ${feedback}\n` : ""}
+
+Return ONLY the JSON object, no preamble.`;
 }
 
 
