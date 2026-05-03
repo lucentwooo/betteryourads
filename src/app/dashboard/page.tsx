@@ -105,14 +105,22 @@ export default async function DashboardPage() {
                 <p className="mt-2 text-sm text-ink/55">
                   Onboarded {onboardedDate}.
                 </p>
-                {latestReport && (
+                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                  {latestReport && (
+                    <a
+                      href={`/analyze/${latestReport.job_id}`}
+                      className="inline-flex items-center gap-1.5 text-ink underline underline-offset-4 hover:text-coral"
+                    >
+                      Open your last diagnosis <ArrowRight className="h-4 w-4" />
+                    </a>
+                  )}
                   <a
-                    href={`/analyze/${latestReport.job_id}`}
-                    className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink underline underline-offset-4 hover:text-coral"
+                    href="/onboarding"
+                    className="inline-flex items-center gap-1.5 text-ink/65 underline-offset-4 hover:text-ink hover:underline"
                   >
-                    Open your last diagnosis <ArrowRight className="h-4 w-4" />
+                    Run a new diagnosis
                   </a>
-                )}
+                </div>
               </div>
 
               {/* Style quiz status */}
