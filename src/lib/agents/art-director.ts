@@ -2,6 +2,7 @@ import type { Concept, CreativeCopy, DenseNarrativePrompt, BrandProfile, VisualR
 import { MODEL_REASON, runWithQA, judgeWithRubric, extractJson, createTextMessage } from "./shared";
 import { selectReferences, type ReferenceAd } from "../references/loader";
 import { renderSeedForPrompt, type AdPromptSeed } from "../style-engine/stitch";
+import { chatText } from "../ai/openrouter";
 
 /**
  * Agent 5 — Art Director (Prompt Writer).
@@ -84,7 +85,12 @@ export async function runArtDirector(
         referenceAds: references.map((r) => r.key),
       };
     },
-    qa: async (p) => promptQA(p, params.brandProfile),
+    qa: async (p) =>
+      promptQA(p, {
+        brand: params.brandProfile,
+        companyName: params.companyName,
+        concept: params.concept,
+      }),
     onAttempt: async (attempt, outcome, q) => {
       await onAgentProgress?.(
         `Prompt QA ${outcome} (attempt ${attempt + 1}, score ${q.score}) — ${params.concept.name}`,
@@ -142,9 +148,13 @@ Return:
 
 /* ───────── QA ───────── */
 
-async function promptQA(p: DenseNarrativePrompt, brand?: BrandProfile) {
+async function promptQA(
+  p: DenseNarrativePrompt,
+  ctx: { brand?: BrandProfile; companyName?: string; concept?: Concept },
+) {
   const hardFails: string[] = [];
   const raw = p.raw || {};
+  const brand = ctx.brand;
 
   for (const f of REQUIRED_FIELDS) {
     if (raw[f] === undefined || raw[f] === null || raw[f] === "") {
@@ -172,12 +182,22 @@ async function promptQA(p: DenseNarrativePrompt, brand?: BrandProfile) {
     }
   }
 
+  // Brand-fit semantic check — catches off-domain props that slip through
+  // when stylistic references (e.g. AG1 wellness lifestyle) bleed into a
+  // brand they don't belong to (e.g. tennis racket on a healthcare ad).
+  if (ctx.companyName && ctx.concept) {
+    const fit = await brandFitCheck(raw, ctx.companyName, ctx.concept, brand);
+    if (!fit.fits) {
+      hardFails.push(`off-brand: ${fit.reason}`);
+    }
+  }
+
   if (hardFails.length > 0) {
     return {
       pass: false,
       score: 3,
       issues: hardFails,
-      feedbackForRetry: `Fix: ${hardFails.slice(0, 6).join(" | ")}. Every required field populated. Cite >= 2 patterns. Include every brand hex code verbatim.`,
+      feedbackForRetry: `Fix: ${hardFails.slice(0, 6).join(" | ")}. Every required field populated. Cite >= 2 patterns. Include every brand hex code verbatim. If "off-brand" appears, remove the offending prop/subject/setting and replace with something obviously native to the brand's product world.`,
       retries: 0,
     };
   }
@@ -280,4 +300,64 @@ ${referenceBlock}
 ${feedback ? `\nQA RETRY: ${feedback}\n` : ""}
 
 Return JSON now.`;
+}
+
+
+/* ───────── Brand-fit semantic check ─────────
+ * Catches off-domain props (tennis racket on a healthcare ad, etc.) that
+ * slip through when style references bleed into a brand they do not fit.
+ * Cheap text-LLM call (~$0.0005) — runs once per generated prompt. */
+
+async function brandFitCheck(
+  raw: Record<string, unknown>,
+  companyName: string,
+  concept: Concept,
+  brand?: BrandProfile,
+): Promise<{ fits: boolean; reason: string }> {
+  const sceneSummary = [
+    `Scene: ${String(raw.scene ?? "").slice(0, 400)}`,
+    `Subject: ${JSON.stringify(raw.subject ?? "").slice(0, 400)}`,
+    `Environment: ${JSON.stringify(raw.environment ?? "").slice(0, 250)}`,
+  ].join("\n");
+
+  const brandLine = brand?.tone ? `Tone: ${brand.tone}` : "";
+
+  const userPrompt = `You are a strict ad QA reviewer. Your only job is to decide whether a proposed ad scene FITS the brand and angle, or contains off-brand props that would confuse a viewer.
+
+Brand: ${companyName}
+Angle: ${concept.angle}
+Awareness stage: ${concept.awarenessStage}
+${brandLine}
+
+Proposed scene:
+${sceneSummary}
+
+Return strict JSON: {"fits": true|false, "reason": "one short sentence"}.
+
+REJECT if:
+- A prop, sport, or activity in the scene has nothing to do with the brand or angle (e.g. tennis racket on a healthcare ad, surfboard on a SaaS dashboard ad, cooking pan on an accounting ad).
+- The subject person's costume/role contradicts the brand category (e.g. an athlete when the brand sells legal services).
+- The setting is irrelevant to the angle (e.g. a beach when the angle is about office productivity).
+
+ACCEPT if every visible prop, person, and setting is plausibly part of the brand's product world or the angle's message. Stylistic borrowing of palette/composition is fine — it's only literal off-domain props that fail.
+
+Return JSON only.`;
+
+  try {
+    const text = await chatText(userPrompt, {
+      maxTokens: 200,
+      temperature: 0.1,
+      timeoutMs: 30_000,
+    });
+    const parsed = extractJson<{ fits: boolean; reason: string }>(text);
+    if (!parsed) return { fits: true, reason: "qa-parse-failed-allow" };
+    return {
+      fits: !!parsed.fits,
+      reason: parsed.reason ?? "no reason given",
+    };
+  } catch (err) {
+    // Fail-open — if the QA judge errors, do not block the pipeline.
+    console.warn("[brandFitCheck] judge error, allowing through:", err);
+    return { fits: true, reason: "judge-error-allow" };
+  }
 }

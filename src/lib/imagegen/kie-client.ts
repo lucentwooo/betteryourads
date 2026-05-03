@@ -84,38 +84,39 @@ export class KieClient {
    * Note: Kie.ai status endpoint is unreliable, so we also try alternative methods
    */
   async getTaskStatus(taskId: string): Promise<TaskResponse['data']> {
-    // Try the standard endpoint first
-    try {
-      const response = await fetch(`${this.baseUrl}/api/v1/jobs/getTaskDetail?task_id=${taskId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-      });
+    const headers = { Authorization: `Bearer ${this.apiKey}` };
+    const endpoints = [
+      `${this.baseUrl}/api/v1/jobs/getTaskDetail?task_id=${taskId}`,
+      `${this.baseUrl}/api/v1/jobs/getTaskDetail?taskId=${taskId}`,
+      `${this.baseUrl}/api/v1/records/${taskId}`,
+    ];
 
-      if (response.ok) {
-        const result: TaskResponse = await response.json();
-        return result.data;
+    // Race all known endpoints in parallel — whichever returns valid data
+    // wins. Kie occasionally serves one endpoint while another 5xx's, so
+    // querying serially with .ok-only short-circuits cost us real jobs.
+    const results = await Promise.allSettled(
+      endpoints.map((url) => fetch(url, { method: 'GET', headers })),
+    );
+
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue;
+      const response = r.value;
+      // Don't bail on non-2xx — Kie sometimes returns 4xx with the actual
+      // payload still in the body. Try to parse anything that came back.
+      let parsed: TaskResponse | null = null;
+      try {
+        parsed = (await response.json()) as TaskResponse;
+      } catch {
+        continue;
       }
-    } catch (e) {
-      // Continue to fallback
-    }
-
-    // Fallback: Try to get status via record endpoint
-    try {
-      const response = await fetch(`${this.baseUrl}/api/v1/records/${taskId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-      });
-
-      if (response.ok) {
-        const result: TaskResponse = await response.json();
-        return result.data;
+      // If we got a non-200 code AND no data, it's a real miss — keep going.
+      if (parsed.code && parsed.code !== 200 && !parsed.data) {
+        console.warn(
+          `[kie] status code=${parsed.code} msg="${parsed.msg}" for ${taskId}`,
+        );
+        continue;
       }
-    } catch (e) {
-      // Continue
+      if (parsed.data) return parsed.data;
     }
 
     return undefined;
@@ -144,7 +145,11 @@ export class KieClient {
   ): Promise<string> {
     const maxAttempts = options?.maxAttempts || 60;
     const intervalMs = options?.intervalMs || 5000;
-    const maxConsecutiveNulls = 5;
+    // Kie's status endpoint is documented as flaky and we've seen it return
+    // null for 30+ seconds on jobs that DO eventually complete. Tolerate up
+    // to 24 consecutive misses (~2 min at 5s intervals) before giving up —
+    // we'd rather wait it out than throw on a job that already succeeded.
+    const maxConsecutiveNulls = 24;
     let consecutiveNulls = 0;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
