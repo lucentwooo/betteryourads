@@ -52,9 +52,18 @@ export function CreativeGallery({ jobId, creatives, concepts }: Props) {
                   {c.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={c.imageUrl} alt={concept?.name ?? c.id} className="h-full w-full object-cover" />
+                  ) : c.status === "failed" ? (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center">
+                      <div className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-coral">
+                        Image gen failed
+                      </div>
+                      <div className="text-xs text-ink/65 line-clamp-4">
+                        {c.qa?.issues?.[0] ?? "Unknown error — check Vercel logs"}
+                      </div>
+                    </div>
                   ) : (
                     <div className="grid h-full w-full place-items-center text-ink/40 text-sm">
-                      {c.status === "failed" ? "Failed" : "Rendering…"}
+                      Rendering…
                     </div>
                   )}
                   <div className="absolute left-3 top-3 flex gap-2">

@@ -144,13 +144,26 @@ export class KieClient {
   ): Promise<string> {
     const maxAttempts = options?.maxAttempts || 60;
     const intervalMs = options?.intervalMs || 5000;
+    const maxConsecutiveNulls = 5;
+    let consecutiveNulls = 0;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const data = await this.getTaskStatus(taskId);
 
+      // The Kie status endpoint flakes intermittently. Tolerate up to
+      // maxConsecutiveNulls misses in a row before giving up — a single
+      // hiccup used to kill the whole creative.
       if (!data) {
-        throw new Error('No data returned from task status check');
+        consecutiveNulls++;
+        if (consecutiveNulls >= maxConsecutiveNulls) {
+          throw new Error(
+            `Kie status endpoint returned no data ${consecutiveNulls}× in a row for task ${taskId}`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        continue;
       }
+      consecutiveNulls = 0;
 
       const status = data.status;
       if (status) options?.onProgress?.(status);
@@ -164,14 +177,15 @@ export class KieClient {
       }
 
       if (status === 'failed') {
-        throw new Error('Image generation failed');
+        throw new Error(`Kie reported task ${taskId} failed`);
       }
 
-      // Wait before next poll
-      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
 
-    throw new Error(`Task did not complete within ${maxAttempts} attempts`);
+    throw new Error(
+      `Task ${taskId} did not complete within ${maxAttempts} attempts (${(maxAttempts * intervalMs) / 1000}s)`,
+    );
   }
 
   /**

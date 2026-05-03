@@ -194,6 +194,9 @@ async function produceOneCreative(params: {
     creative.status = qa.pass ? "complete" : "complete"; // keep for UI even if QA flagged
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown";
+    // Log to Vercel runtime so the full error (incl. stack) is grep-able
+    // even after the job state is summarised down to a one-line message.
+    console.error(`[image-gen] ${creative.id} threw:`, err);
     await progress(`Image gen failed for ${creative.id}: ${msg}`);
     creative.status = "failed";
     creative.qa = {
